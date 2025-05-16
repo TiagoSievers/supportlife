@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   AppBar,
   Toolbar,
@@ -10,6 +10,12 @@ import {
 import { AccountCircle } from '@mui/icons-material';
 
 const Navbar: React.FC = () => {
+  // Verifica se o usuário está logado
+  const isLoggedIn = Boolean(localStorage.getItem('userToken'));
+  // Verifica a rota atual
+  const location = useLocation();
+  const isHome = location && location.pathname === '/';
+
   return (
     <AppBar 
       position="fixed" 
@@ -21,36 +27,39 @@ const Navbar: React.FC = () => {
       }}
     >
       <Toolbar sx={{ justifyContent: 'space-between' }}>
-        <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center' }}>
+        <Link to="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 0 }}>
+          <img 
+            src={require('../assets/output_image_3.png')} 
+            alt="ALO SUPPORT" 
+            style={{ height: 48 }} 
+          />
           <Typography 
-            variant="h6" 
+            variant="subtitle1" 
             sx={{ 
               fontWeight: 'bold',
-              '& .pronto': {
-                color: '#f44336'
-              },
-              '& .socorro': {
-                color: '#2196f3'
-              }
+              color: '#000000',
+              whiteSpace: 'nowrap',
+              ml: 0.5
             }}
           >
-            <span className="pronto">Pronto</span>
-            <span className="socorro">Socorro</span>
+            Saúde 24horas
           </Typography>
         </Link>
 
-        <Box>
-          <IconButton
-            size="large"
-            edge="end"
-            aria-label="account"
-            aria-haspopup="true"
-            component={Link}
-            to="/profile"
-            sx={{ color: '#757575' }}
-          >
-            <AccountCircle />
-          </IconButton>
+        <Box sx={{ ml: 'auto' }}>
+          {(isLoggedIn && !isHome) && (
+            <IconButton
+              size="large"
+              edge="end"
+              aria-label="account"
+              aria-haspopup="true"
+              component={Link}
+              to="/profile"
+              sx={{ color: '#757575' }}
+            >
+              <AccountCircle />
+            </IconButton>
+          )}
         </Box>
       </Toolbar>
     </AppBar>

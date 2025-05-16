@@ -1,84 +1,63 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Container,
   Box,
   Typography,
-  Avatar,
   Button,
-  TextField,
   Paper,
-  IconButton,
-  List,
-  ListItem,
-  ListItemAvatar,
-  ListItemText,
-  ListItemSecondaryAction,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
 } from '@mui/material';
 import { Link } from 'react-router-dom';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
-import PersonIcon from '@mui/icons-material/Person';
-
-interface FamilyMember {
-  id: string;
-  name: string;
-  relationship: string;
-  phone: string;
-  email: string;
-  isEmergencyContact: boolean;
-}
+import FamilyMemberForm, { FamilyMember } from '../components/FamilyMemberForm';
+import FamilyMemberList from '../components/FamilyMemberList';
+import { fetchFamiliares } from '../Supabase/supabaseClient';
 
 const Family: React.FC = () => {
-  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([
-    {
-      id: '1',
-      name: 'Maria Silva',
-      relationship: 'Mãe',
-      phone: '(11) 98765-4321',
-      email: 'maria@example.com',
-      isEmergencyContact: true,
-    },
-    {
-      id: '2',
-      name: 'João Silva',
-      relationship: 'Pai',
-      phone: '(11) 91234-5678',
-      email: 'joao@example.com',
-      isEmergencyContact: true,
-    },
-  ]);
-
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [openDialog, setOpenDialog] = useState(false);
   const [selectedMember, setSelectedMember] = useState<FamilyMember | null>(null);
-  const [editingMember, setEditingMember] = useState<FamilyMember>({
-    id: '',
+  const [isEditing, setIsEditing] = useState(false);
+
+  const emptyMember: FamilyMember = {
+    id: `temp-${Date.now().toString()}`,
     name: '',
     relationship: '',
     phone: '',
     email: '',
-    isEmergencyContact: false,
-  });
+    isEmergencyContact: false
+  };
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const familiares = await fetchFamiliares();
+        const members = familiares.map((f: any) => ({
+          id: f.id,
+          name: f.nome,
+          relationship: f.parentesco,
+          phone: f.telefone,
+          email: f.email,
+          isEmergencyContact: f.contato_emergencia
+        }));
+        setFamilyMembers(members);
+      } catch (error) {
+        console.error('Erro ao buscar familiares:', error);
+      }
+    };
+    fetchData();
+  }, []);
 
   const handleOpenDialog = (member?: FamilyMember) => {
     if (member) {
-      setEditingMember(member);
       setSelectedMember(member);
+      setIsEditing(true);
     } else {
-      setEditingMember({
-        id: Date.now().toString(),
-        name: '',
-        relationship: '',
-        phone: '',
-        email: '',
-        isEmergencyContact: false,
+      setSelectedMember({
+        ...emptyMember,
+        id: `temp-${Date.now().toString()}`,
       });
-      setSelectedMember(null);
+      setIsEditing(false);
     }
     setOpenDialog(true);
   };
@@ -86,39 +65,22 @@ const Family: React.FC = () => {
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setSelectedMember(null);
-    setEditingMember({
-      id: '',
-      name: '',
-      relationship: '',
-      phone: '',
-      email: '',
-      isEmergencyContact: false,
-    });
+    setIsEditing(false);
   };
 
-  const handleSave = () => {
-    if (selectedMember) {
-      setFamilyMembers(prev =>
-        prev.map(member =>
-          member.id === selectedMember.id ? editingMember : member
-        )
+  const handleSave = (member: FamilyMember) => {
+    setFamilyMembers(prev => {
+      const filtered = prev.filter(item => 
+        item.id !== member.id && 
+        (!item.id.startsWith('temp-') || item.id !== selectedMember?.id)
       );
-    } else {
-      setFamilyMembers(prev => [...prev, editingMember]);
-    }
+      return [...filtered, member];
+    });
     handleCloseDialog();
   };
 
   const handleDelete = (id: string) => {
     setFamilyMembers(prev => prev.filter(member => member.id !== id));
-  };
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value, checked } = e.target;
-    setEditingMember(prev => ({
-      ...prev,
-      [name]: name === 'isEmergencyContact' ? checked : value,
-    }));
   };
 
   return (
@@ -143,58 +105,15 @@ const Family: React.FC = () => {
             </Button>
           </Box>
 
-          <List>
-            {familyMembers.map((member) => (
-              <ListItem
-                key={member.id}
-                sx={{
-                  bgcolor: 'background.paper',
-                  mb: 1,
-                  borderRadius: 1,
-                  '&:hover': { bgcolor: 'grey.50' },
-                }}
-              >
-                <ListItemAvatar>
-                  <Avatar sx={{ bgcolor: member.isEmergencyContact ? 'error.main' : 'primary.main' }}>
-                    <PersonIcon />
-                  </Avatar>
-                </ListItemAvatar>
-                <ListItemText
-                  primary={member.name}
-                  secondary={
-                    <React.Fragment>
-                      <Typography component="span" variant="body2" color="text.primary">
-                        {member.relationship}
-                      </Typography>
-                      {" — "}{member.phone}
-                      {member.isEmergencyContact && (
-                        <Typography
-                          component="span"
-                          variant="body2"
-                          color="error"
-                          sx={{ display: 'block' }}
-                        >
-                          Contato de Emergência
-                        </Typography>
-                      )}
-                    </React.Fragment>
-                  }
-                />
-                <ListItemSecondaryAction>
-                  <IconButton edge="end" onClick={() => handleOpenDialog(member)} sx={{ mr: 1 }}>
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton edge="end" onClick={() => handleDelete(member.id)}>
-                    <DeleteIcon />
-                  </IconButton>
-                </ListItemSecondaryAction>
-              </ListItem>
-            ))}
-          </List>
+          <FamilyMemberList
+            familyMembers={familyMembers}
+            onEdit={handleOpenDialog}
+            onDelete={handleDelete}
+          />
         </Paper>
 
         <Box sx={{ mt: 4 }}>
-          <Link to="/" style={{ textDecoration: 'none' }}>
+          <Link to="/home" style={{ textDecoration: 'none' }}>
             <Button
               startIcon={<ArrowBackIcon />}
               color="primary"
@@ -204,64 +123,15 @@ const Family: React.FC = () => {
           </Link>
         </Box>
 
-        <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-          <DialogTitle>
-            {selectedMember ? 'Editar Familiar' : 'Adicionar Familiar'}
-          </DialogTitle>
-          <DialogContent>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
-              <TextField
-                fullWidth
-                label="Nome Completo"
-                name="name"
-                value={editingMember.name}
-                onChange={handleChange}
-                variant="outlined"
-              />
-              <TextField
-                fullWidth
-                label="Parentesco"
-                name="relationship"
-                value={editingMember.relationship}
-                onChange={handleChange}
-                variant="outlined"
-              />
-              <TextField
-                fullWidth
-                label="Telefone"
-                name="phone"
-                value={editingMember.phone}
-                onChange={handleChange}
-                variant="outlined"
-              />
-              <TextField
-                fullWidth
-                label="Email"
-                name="email"
-                type="email"
-                value={editingMember.email}
-                onChange={handleChange}
-                variant="outlined"
-              />
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <input
-                  type="checkbox"
-                  id="isEmergencyContact"
-                  name="isEmergencyContact"
-                  checked={editingMember.isEmergencyContact}
-                  onChange={handleChange}
-                />
-                <label htmlFor="isEmergencyContact">Definir como Contato de Emergência</label>
-              </Box>
-            </Box>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={handleCloseDialog}>Cancelar</Button>
-            <Button onClick={handleSave} variant="contained" color="primary">
-              Salvar
-            </Button>
-          </DialogActions>
-        </Dialog>
+        {selectedMember && (
+          <FamilyMemberForm
+            open={openDialog}
+            onClose={handleCloseDialog}
+            onSave={handleSave}
+            member={selectedMember}
+            isEditing={isEditing}
+          />
+        )}
       </Container>
     </Box>
   );

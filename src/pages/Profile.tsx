@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Container,
   Box,
@@ -9,8 +9,9 @@ import {
   Paper,
   IconButton,
 } from '@mui/material';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import { logoutSupabase, fetchUserByEmail } from '../Supabase/supabaseClient';
 
 interface UserProfile {
   name: string;
@@ -23,15 +24,41 @@ interface UserProfile {
 
 const Profile: React.FC = () => {
   const [profile, setProfile] = useState<UserProfile>({
-    name: 'John Doe',
-    email: 'john.doe@example.com',
-    phone: '(11) 99999-9999',
-    bloodType: 'O+',
-    allergies: 'None',
-    emergencyContact: '(11) 88888-8888'
+    name: '',
+    email: '',
+    phone: '',
+    bloodType: '',
+    allergies: '',
+    emergencyContact: ''
   });
 
   const [isEditing, setIsEditing] = useState(false);
+  const [userPerfil, setUserPerfil] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      const email = localStorage.getItem('userEmail');
+      if (!email) return;
+      try {
+        const userArr = await fetchUserByEmail(email);
+        const user = userArr[0];
+        if (user) {
+          setProfile({
+            name: user.nome || '',
+            email: user.email || '',
+            phone: user.telefone || '',
+            bloodType: user.tipo_sanguineo || '',
+            allergies: user.alergias || '',
+            emergencyContact: user.contato_emergencia || ''
+          });
+          setUserPerfil(user.perfil || null);
+        }
+      } catch (error) {
+        // Pode adicionar tratamento de erro se desejar
+      }
+    };
+    fetchProfile();
+  }, []);
 
   const handleSave = () => {
     // TODO: Implement API call to save profile
@@ -175,8 +202,8 @@ const Profile: React.FC = () => {
           </Box>
         </Box>
 
-        <Box sx={{ mt: 4 }}>
-          <Link to="/" style={{ textDecoration: 'none' }}>
+        <Box sx={{ mt: 4, display: 'flex', flexDirection: 'row', gap: 2 }}>
+          <Link to={userPerfil && userPerfil.toLowerCase() === 'parceiro' ? "/partner-emergencies" : "/home"} style={{ textDecoration: 'none' }}>
             <Button
               startIcon={<ArrowBackIcon />}
               color="primary"
@@ -184,6 +211,19 @@ const Profile: React.FC = () => {
               Voltar para Home
             </Button>
           </Link>
+          <Button
+            variant="outlined"
+            color="error"
+            onClick={async () => {
+              await logoutSupabase();
+              localStorage.removeItem('userToken');
+              localStorage.removeItem('userRole');
+              localStorage.removeItem('userData');
+              window.location.href = '/';
+            }}
+          >
+            Sair
+          </Button>
         </Box>
       </Container>
     </Box>

@@ -3,11 +3,16 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, CssBaseline, Box } from '@mui/material';
 import theme from './theme';
 import Navbar from './components/Navbar';
-import Home from './pages/Home';
+import Home from './pages/home/Home';
 import Profile from './pages/Profile';
 import Family from './pages/Family';
 import Admin from './pages/Admin';
-import Emergency from './pages/Emergency';
+import Emergency from './pages/emergencia/Emergency';
+import AdminPanel from './pages/admin_panel/AdminPanel';
+import ResetPassword from './pages/ResetPassword';
+import PartnerEmergencies from './pages/emer_socorrista/PartnerEmergencies';
+import Login from './pages/login/Login';
+import EmergencySocorrista from './pages/emer_socorrista/EmergencySocorrista';
 
 
 const App: React.FC = () => {
@@ -27,12 +32,16 @@ const App: React.FC = () => {
             }}
           >
             <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/profile" element={<Profile />} />
-              <Route path="/family" element={<Family />} />
-              <Route path="/admin" element={<Admin />} />
-              <Route path="/emergency" element={<Emergency />} />
-
+  <Route path="/" element={<Login />} />
+  <Route path="/profile" element={<Profile />} />
+  <Route path="/family" element={<Family />} />
+  <Route path="/admin" element={<Admin />} />
+  <Route path="/emergency" element={<Emergency />} />
+  <Route path="/emergencia-socorrista" element={<EmergencySocorrista />} />
+  <Route path="/admin-panel" element={<AdminPanel />} />
+  <Route path="/reset-password" element={<ResetPassword />} />
+  <Route path="/home" element={<Home />} />
+  <Route path="/partner-emergencies" element={<PartnerEmergencies />} />
             </Routes>
           </Box>
         </Box>
