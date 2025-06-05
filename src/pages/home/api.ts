@@ -9,6 +9,7 @@ export type CriarChamadoParams = {
   status: string;
   descricao: string;
   localizacao: string;
+  posicao_inicial_socorrista?: string;
 };
 
 export async function criarChamado(params: CriarChamadoParams): Promise<boolean> {

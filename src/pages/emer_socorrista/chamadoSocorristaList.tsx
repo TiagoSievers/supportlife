@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Paper, Typography, Table, TableHead, TableRow, TableCell, TableBody, Box, CircularProgress, Button, useTheme, useMediaQuery } from '@mui/material';
 import ChamadoModal from './ChamadoModal';
 import { getAddressFromCoords } from './getAddressFromCoordsSocorrista';
@@ -10,9 +10,14 @@ export interface Chamado {
   status: string;
   data_abertura: string;
   localizacao: string;
+  posicao_inicial_socorrista?: string;
 }
 
-const ChamadoSocorristaList: React.FC = () => {
+interface ChamadoSocorristaListProps {
+  onNewChamado?: () => void;
+}
+
+const ChamadoSocorristaList: React.FC<ChamadoSocorristaListProps> = ({ onNewChamado }) => {
   const [chamados, setChamados] = useState<Chamado[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +26,7 @@ const ChamadoSocorristaList: React.FC = () => {
   const [enderecos, setEnderecos] = useState<{ [id: string]: string | null }>({});
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const fetchChamados = async () => {
     setLoading(true);
@@ -28,12 +34,14 @@ const ChamadoSocorristaList: React.FC = () => {
     try {
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+      const accessToken = localStorage.getItem('accessToken');
       if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
+      if (!accessToken) throw new Error('accessToken não encontrado no localStorage');
       const response = await fetch(`${url}/rest/v1/chamado?status=eq.Aceito%20%2F%20Em%20andamento`, {
         method: 'GET',
         headers: {
           'apikey': serviceKey,
-          'Authorization': `Bearer ${serviceKey}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json'
         }
       });
@@ -63,11 +71,21 @@ const ChamadoSocorristaList: React.FC = () => {
   };
 
   useEffect(() => {
+    audioRef.current = new Audio('/assets/notification.mp3');
+  }, []);
+
+  useEffect(() => {
     fetchChamados();
     // Realtime subscription
     const channel = supabase
       .channel('public:chamado')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chamado' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          if (audioRef.current) {
+            audioRef.current.play().catch(() => {});
+          }
+          if (onNewChamado) onNewChamado();
+        }
         fetchChamados();
       })
       .subscribe();
@@ -87,30 +105,30 @@ const ChamadoSocorristaList: React.FC = () => {
     setSelectedChamado(null);
   };
 
-  const handleFazerAtendimento = async () => {
-    if (!selectedChamado) return;
+  const handleRecusar = async (chamado: Chamado) => {
     try {
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+      const accessToken = localStorage.getItem('accessToken');
       if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
-      const response = await fetch(`${url}/rest/v1/chamado?id=eq.${selectedChamado.id}`, {
+      if (!accessToken) throw new Error('accessToken não encontrado no localStorage');
+      const response = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
         method: 'PATCH',
         headers: {
           'apikey': serviceKey,
-          'Authorization': `Bearer ${serviceKey}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
           'Prefer': 'return=minimal'
         },
-        body: JSON.stringify({ status: 'A caminho' })
+        body: JSON.stringify({ status: 'finalizado' })
       });
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.error_description || data.message || `Erro ${response.status}`);
       }
-      handleCloseModal();
       fetchChamados();
     } catch (err) {
-      alert('Erro ao atualizar status para A caminho.');
+      alert('Erro ao finalizar chamado.');
     }
   };
 
@@ -139,7 +157,7 @@ const ChamadoSocorristaList: React.FC = () => {
                 <span style={{ fontSize: 13 }}>{formatarDataHora(c.data_abertura)}</span>
                 <span>
                   <Button size="small" color="primary" onClick={() => handleVisualizar(c)}>Visualizar</Button>
-                  <Button size="small" color="error" onClick={() => {}} sx={{ ml: 1 }}>Recusar</Button>
+                  <Button size="small" color="error" onClick={() => handleRecusar(c)} sx={{ ml: 1 }}>Recusar</Button>
                 </span>
               </Box>
             </Paper>
@@ -150,7 +168,7 @@ const ChamadoSocorristaList: React.FC = () => {
         open={modalOpen}
         chamado={selectedChamado}
         onClose={handleCloseModal}
-        onFazerAtendimento={handleFazerAtendimento}
+        onFazerAtendimento={() => {}}
       />
     </Box>
   );

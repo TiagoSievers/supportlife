@@ -35,11 +35,14 @@ export async function criarCliente({ user_id, nome, telefone, status = 'Ativo', 
 
 // Busca todos os clientes
 export async function buscarClientes(): Promise<any[]> {
+  const anonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
+  const accessToken = localStorage.getItem('accessToken');
+  if (!url || !anonKey) throw new Error('REACT_APP_SUPABASE_URL ou ANON_KEY não definida no .env');
   const response = await fetch(`${url}/rest/v1/cliente`, {
     method: 'GET',
     headers: {
-      'apikey': serviceKey as string,
-      'Authorization': `Bearer ${serviceKey}`,
+      'apikey': anonKey as string,
+      'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json'
     } as HeadersInit
   });

@@ -324,6 +324,7 @@ export const fetchUserByEmail = async (email: string) => {
 export interface Familiar {
   id?: string;
   user_id: string;
+  cliente_id: number;
   nome: string;
   parentesco: string;
   telefone: string;
@@ -342,16 +343,24 @@ export const addFamiliar = async (familiar: Familiar) => {
       throw new Error('Usuário não está autenticado');
     }
 
-    const response = await fetch(`${url}/rest/v1/familia`, {
+    const apiUrl = `${url}/rest/v1/familiares`;
+    const headers = {
+      'apikey': serviceKey,
+      'Authorization': `Bearer ${userToken}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation'
+    };
+    const body = JSON.stringify([familiar]);
+
+    // LOGS DETALHADOS
+    console.log('[addFamiliar] API URL:', apiUrl);
+    console.log('[addFamiliar] Headers:', headers);
+    console.log('[addFamiliar] Request Body:', body);
+
+    const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        'apikey': serviceKey,
-        'Authorization': `Bearer ${userToken}`,
-        'Content-Type': 'application/json',
-        'Content-Profile': 'vital_brasil',
-        'Prefer': 'return=representation'
-      },
-      body: JSON.stringify([familiar])
+      headers,
+      body
     });
 
     const data = await response.json();
@@ -372,21 +381,19 @@ export const fetchFamiliares = async () => {
   try {
     const { url, serviceKey } = getSupabaseKeys();
     const userToken = localStorage.getItem('userToken');
-    const userData = localStorage.getItem('userData');
+    const clienteId = localStorage.getItem('clienteId');
 
-    if (!userToken || !userData) {
-      throw new Error('Usuário não está autenticado');
+    if (!userToken || !clienteId) {
+      throw new Error('Usuário não está autenticado ou clienteId não encontrado');
     }
 
-    const { id: userId } = JSON.parse(userData);
-
-    const response = await fetch(`${url}/rest/v1/familia?user_id=eq.${userId}&order=criado_em.desc`, {
+    const response = await fetch(`${url}/rest/v1/familiares?cliente_id=eq.${clienteId}&order=criado_em.desc`, {
       method: 'GET',
       headers: {
         'apikey': serviceKey,
         'Authorization': `Bearer ${userToken}`,
         'Content-Type': 'application/json',
-        'Accept-Profile': 'vital_brasil'
+        'Prefer': 'return=representation'
       }
     });
 

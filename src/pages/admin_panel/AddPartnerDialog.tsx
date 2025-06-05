@@ -8,8 +8,9 @@ import {
   TextField, 
   Button 
 } from '@mui/material';
-import { sendInvite } from '../Supabase/supabaseClient';
-import { criarSocorrista } from './api';
+import { sendInvite } from '../../Supabase/supabaseClient';
+import { criarSocorrista } from '../../socorristas/api';
+import InputMask from 'react-input-mask';
 
 interface AddPartnerDialogProps {
   open: boolean;
@@ -42,39 +43,37 @@ const AddPartnerDialog: React.FC<AddPartnerDialogProps> = ({ open, onClose, init
       alert('Por favor, preencha todos os campos.');
       return;
     }
-
-    // === FLUXO 1: CRIAÇÃO DE SOCORRISTA ===
-    if (!onSave) {
-      try {
-        console.log('[AddPartnerDialog] Fluxo de adição (sendInvite + criarSocorrista)');
-        const inviteResponse = await sendInvite(email);
-        alert('Convite enviado com sucesso!');
-        const userId = inviteResponse.id;
-        if (!userId) {
-          alert('Erro: user_id não retornado pelo convite.');
-          return;
-        }
-        await criarSocorrista({
-          user_id: userId,
-          nome: contato,
-          telefone,
-          email,
-          status: 'Ativo',
-          nome_empresa: empresa,
-        });
-        if (onCreate) {
-          onCreate({ empresa, contato, email, telefone });
-        }
-        onClose();
-      } catch (error) {
-        console.error('Erro ao enviar convite ou criar socorrista:', error);
-        alert('Erro ao enviar convite ou criar socorrista, tente novamente.');
-      }
+    // === FLUXO 2: EDIÇÃO DE PARCEIRO ===
+    if (onSave) {
+      await onSave({ empresa, contato, email, telefone });
       return;
     }
-
-    // === FLUXO 2: EDIÇÃO DE PARCEIRO ===
-    await onSave({ empresa, contato, email, telefone });
+    // === FLUXO 1: CRIAÇÃO DE SOCORRISTA ===
+    try {
+      console.log('[AddPartnerDialog] Fluxo de adição (sendInvite + criarSocorrista)');
+      const inviteResponse = await sendInvite(email);
+      alert('Convite enviado com sucesso!');
+      const userId = inviteResponse.id;
+      if (!userId) {
+        alert('Erro: user_id não retornado pelo convite.');
+        return;
+      }
+      await criarSocorrista({
+        user_id: userId,
+        nome: contato,
+        telefone,
+        email,
+        status: 'Ativo',
+        nome_empresa: empresa,
+      });
+      if (onCreate) {
+        onCreate({ empresa, contato, email, telefone });
+      }
+      onClose();
+    } catch (error) {
+      console.error('Erro ao enviar convite ou criar socorrista:', error);
+      alert('Erro ao enviar convite ou criar socorrista, tente novamente.');
+    }
   };
 
   return (
@@ -95,7 +94,7 @@ const AddPartnerDialog: React.FC<AddPartnerDialogProps> = ({ open, onClose, init
         />
         <TextField
           margin="dense"
-          label="Contato"
+          label="Nome do socorrista"
           type="text"
           fullWidth
           value={contato}
@@ -116,6 +115,13 @@ const AddPartnerDialog: React.FC<AddPartnerDialogProps> = ({ open, onClose, init
           fullWidth
           value={telefone}
           onChange={(e) => setTelefone(e.target.value)}
+          InputProps={{
+            inputComponent: InputMask as any,
+            inputProps: {
+              mask: '(99) 99999-9999',
+              maskChar: null
+            }
+          }}
         />
       </DialogContent>
       <DialogActions>

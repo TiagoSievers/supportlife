@@ -14,7 +14,7 @@ import {
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import PersonIcon from '@mui/icons-material/Person';
-import { FamilyMember } from './FamilyMemberForm';
+import { FamilyMember } from '../pages/familiares/FamilyMemberDialog';
 
 interface FamilyMemberListProps {
   familyMembers: FamilyMember[];

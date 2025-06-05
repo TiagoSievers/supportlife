@@ -14,7 +14,7 @@ interface MapMarker {
   };
   title: string;
   description?: string;
-  type?: 'ambulancia' | 'paciente' | 'socorrista';
+  type?: 'ambulancia' | 'paciente';
 }
 
 interface MapPatnerProps {
@@ -124,16 +124,17 @@ const MapPatnerMap: React.FC<MapPatnerProps> = ({
             />
           )}
           {children}
+          <FitBounds markers={markers} />
           <Marker position={ambulancePosition || center} icon={ambulanceLeafletIcon}>
             <Popup>
               Marcador de ambulância personalizado!
             </Popup>
           </Marker>
           <Marker position={center}>
-              <Popup>
+            <Popup>
               Local do chamado (paciente)
-              </Popup>
-            </Marker>
+            </Popup>
+          </Marker>
         </MapContainer>
       </Paper>
     </Box>
@@ -174,5 +175,4 @@ export function calcularDistanciaTotalKm(routeCoords: { lat: number; lng: number
   return total;
 }
 
-export type { MapMarker };
 export default MapPatnerNavigation; 

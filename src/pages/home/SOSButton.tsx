@@ -1,11 +1,25 @@
 import React from 'react';
 import { Button, Box, Typography } from '@mui/material';
-import { styled } from '@mui/material/styles';
+import { styled, keyframes } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
+import { getAddressFromCoords } from './getAddressFromCoords';
+
+// Adicionar animação de sombra suave
+const shadowGlow = keyframes`
+  0% {
+    box-shadow: 0 4px 20px rgba(244, 67, 54, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 50px 18px rgba(244, 67, 54, 0.65);
+  }
+  100% {
+    box-shadow: 0 4px 20px rgba(244, 67, 54, 0.45);
+  }
+`;
 
 const StyledSOSButton = styled(Button)(({ theme }) => ({
-  width: '200px',
-  height: '200px',
+  width: '260px',
+  height: '260px',
   backgroundColor: '#f44336',
   color: '#fff',
   borderRadius: '50%',
@@ -16,10 +30,12 @@ const StyledSOSButton = styled(Button)(({ theme }) => ({
   transition: 'all 0.3s ease',
   position: 'relative',
   overflow: 'hidden',
+  animation: `${shadowGlow} 2s infinite`,
   '&:hover': {
     backgroundColor: '#d32f2f',
     transform: 'scale(1.05)',
     boxShadow: '0 6px 25px rgba(244, 67, 54, 0.35)',
+    animation: 'none',
   },
   '&:active': {
     transform: 'scale(0.95)',
@@ -60,22 +76,71 @@ const SOSButton: React.FC = () => {
 
     // Obter localização do usuário
     let localizacao = '';
+    let endereco_textual = '';
+    let latitude = null;
+    let longitude = null;
     try {
       const getPosition = () => new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject);
+        const options = {
+          enableHighAccuracy: true,  // Solicita a melhor precisão possível
+          timeout: 10000,           // Tempo limite de 10 segundos
+          maximumAge: 0             // Não usar posições em cache
+        };
+        navigator.geolocation.getCurrentPosition(resolve, reject, options);
       });
       const position = await getPosition();
-      const { latitude, longitude } = position.coords;
-      // Opcional: fazer reverse geocoding para obter endereço textual
+      latitude = position.coords.latitude;
+      longitude = position.coords.longitude;
       localizacao = `${latitude},${longitude}`;
+      console.log('Coordenadas obtidas:', latitude, longitude);
     } catch (geoError) {
       console.warn('Não foi possível obter a localização do usuário:', geoError);
+      // Mensagens de erro amigáveis
+      if (geoError && typeof geoError === 'object' && 'code' in geoError) {
+        switch (geoError.code) {
+          case 1: // PERMISSION_DENIED
+            alert('Por favor, permita o acesso à sua localização para continuar.');
+            break;
+          case 2: // POSITION_UNAVAILABLE
+            alert('Informações de localização indisponíveis. Por favor, verifique suas configurações de localização.');
+            break;
+          case 3: // TIMEOUT
+            alert('Tempo esgotado ao obter localização. Por favor, tente novamente.');
+            break;
+          default:
+            alert('Não foi possível obter sua localização.');
+        }
+      } else {
+        alert('Não foi possível obter sua localização.');
+      }
       localizacao = '';
+      endereco_textual = '';
+      return; // Sai da função se não conseguir obter a localização
     }
+
+    // Tentar buscar o endereço até conseguir ou atingir o limite de tentativas
+    async function tentarBuscarEndereco(lat: number, lon: number, tentativas = 5, delayMs = 1500) {
+      for (let i = 0; i < tentativas; i++) {
+        try {
+          const endereco = await getAddressFromCoords(lat, lon);
+          if (endereco) return endereco;
+        } catch (e) {
+          // ignora erro e tenta novamente
+        }
+        await new Promise(res => setTimeout(res, delayMs));
+      }
+      return '';
+    }
+
+    if (latitude && longitude) {
+      endereco_textual = await tentarBuscarEndereco(latitude, longitude);
+    }
+    console.log('Endereço textual obtido:', endereco_textual);
 
     const chamadoData = {
       cliente_id: Number(cliente_id),
       localizacao,
+      endereco_textual,
       status: 'Pendente'
     };
 
@@ -96,6 +161,38 @@ const SOSButton: React.FC = () => {
       });
       if (!response.ok) {
         throw new Error('Erro ao criar chamado');
+      }
+      // Obter o id do chamado criado
+      const locationHeader = response.headers.get('Location');
+      let chamadoId = null;
+      if (locationHeader) {
+        // Exemplo: /rest/v1/chamado?id=eq.42
+        const match = locationHeader.match(/id=eq\\.(\\d+)/);
+        if (match) {
+          chamadoId = Number(match[1]);
+        }
+      }
+      // Se não conseguir pelo header, buscar o último chamado do cliente
+      if (!chamadoId) {
+        const res = await fetch(`${url}/rest/v1/chamado?select=id&cliente_id=eq.${cliente_id}&order=id.desc&limit=1`, { headers });
+        const data = await res.json();
+        chamadoId = data && data[0] && data[0].id ? data[0].id : null;
+      }
+      // Criar log_chamado
+      if (chamadoId) {
+        const logData = {
+          chamado_id: chamadoId,
+          cliente_id: Number(cliente_id),
+          localizacao,
+          endereco_textual,
+          status: 'Pendente',
+          data_abertura: new Date().toISOString()
+        };
+        await fetch(`${url}/rest/v1/log_chamado`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(logData)
+        });
       }
       console.log('Chamado criado com sucesso!');
       navigate('/emergency');

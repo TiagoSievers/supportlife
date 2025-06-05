@@ -29,15 +29,18 @@ import PeopleIcon from '@mui/icons-material/People';
 import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import LogoutIcon from '@mui/icons-material/Logout';
+import NotificationsIcon from '@mui/icons-material/Notifications';
+import IconButton from '@mui/material/IconButton';
+import Badge from '@mui/material/Badge';
 import { useNavigate } from 'react-router-dom';
 import { logoutSupabase } from '../../Supabase/supabaseClient';
-import AddClientDialog from '../../cliente/AddClientDialog';
-import AddUserAdminDialog from '../../user_admin/AddUserAdminDialog';
-import AddPartnerDialog from '../../socorristas/AddPartnerDialog';
-import ClientList from '../../cliente/ClientList';
-import PartnerList from '../../socorristas/PartnerList';
-import AdminUserList from '../../user_admin/AdminUserList';
+import AddUserAdminDialog from './AddUserAdminDialog';
+import AddPartnerDialog from './AddPartnerDialog';
+import ClientList from './ClientList';
+import PartnerList from './PartnerList';
+import AdminUserList from './AdminUserList';
 import ChamadoList from '../chamado/ChamadoList';
+import ClientDialog, { Cliente } from './ClientDialog';
 
 const drawerWidth = 240;
 
@@ -45,6 +48,8 @@ const AdminPanel: React.FC = () => {
   const [selectedSection, setSelectedSection] = useState('Chamados');
   const [openDialog, setOpenDialog] = useState(false);
   const [dialogType, setDialogType] = useState('');
+  const [hasNewChamado, setHasNewChamado] = useState(false);
+  const [editClient, setEditClient] = useState<Cliente | null>(null);
   const navigate = useNavigate();
 
   // ===== handleSectionChange =====
@@ -61,6 +66,7 @@ const AdminPanel: React.FC = () => {
   // ===== handleCloseDialog =====
   const handleCloseDialog = () => {
     setOpenDialog(false);
+    setEditClient(null);
   };
 
   // ===== handleLogout =====
@@ -71,6 +77,18 @@ const AdminPanel: React.FC = () => {
     localStorage.removeItem('userData');
     console.log('Logout realizado, localStorage limpo:', localStorage);
     navigate('/');
+  };
+
+  // ===== handleEditClient =====
+  const handleEditClient = (cliente: Cliente) => {
+    setEditClient(cliente);
+    setDialogType('cliente');
+    setOpenDialog(true);
+  };
+
+  // ===== handleSaveClient =====
+  const handleSaveClient = (data: Cliente) => {
+    handleCloseDialog();
   };
 
   // ===== renderDialogTitle =====
@@ -96,7 +114,7 @@ const AdminPanel: React.FC = () => {
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
               <Typography variant="h4">Lista de Chamados</Typography>
             </Box>
-            <ChamadoList />
+            <ChamadoList onNewChamado={() => setHasNewChamado(true)} />
           </>
         );
       case 'Clientes':
@@ -107,12 +125,16 @@ const AdminPanel: React.FC = () => {
               <Button 
                 variant="contained" 
                 color="primary"
-                onClick={() => handleOpenDialog('cliente')}
+                onClick={() => { 
+                  setEditClient(null); // Limpa o cliente em edição
+                  setDialogType('cliente');
+                  setOpenDialog(true);
+                }}
               >
                 Adicionar Cliente
               </Button>
             </Box>
-            <ClientList />
+            <ClientList onEditClient={handleEditClient} />
           </>
         );
       case 'Socorristas':
@@ -158,10 +180,15 @@ const AdminPanel: React.FC = () => {
       
       {/* Header */}
       <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
-        <Toolbar>
+        <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
           <Typography variant="h6" noWrap component="div">
             Painel Administrativo
           </Typography>
+          <IconButton color="inherit" sx={{ ml: 2 }}>
+            <Badge color="error" variant="dot" invisible={!hasNewChamado}>
+              <NotificationsIcon />
+            </Badge>
+          </IconButton>
         </Toolbar>
       </AppBar>
       
@@ -262,10 +289,18 @@ const AdminPanel: React.FC = () => {
         {renderMainContent()}
       </Box>
 
-      {/* Diálogo de Formulário */}
+      {/* Modal de Cliente */}
       {dialogType === 'cliente' && (
-        <AddClientDialog open={openDialog} onClose={handleCloseDialog} />
+        <ClientDialog
+          open={openDialog}
+          onClose={handleCloseDialog}
+          onSave={handleSaveClient}
+          initialData={editClient || undefined}
+          isEditing={!!editClient}
+        />
       )}
+
+      {/* Diálogo de Formulário */}
       {dialogType === 'parceiro' && (
         <AddPartnerDialog open={openDialog} onClose={handleCloseDialog} />
       )}

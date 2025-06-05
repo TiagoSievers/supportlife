@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, CircularProgress, Typography, Box } from '@mui/material';
-import { buscarSocorristas, updateSocorrista, deleteSocorrista, SocorristaParams } from './api';
+import { SocorristaParams } from '../../socorristas/api';
 import AddPartnerDialog from './AddPartnerDialog';
-import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
-import { supabase } from '../Supabase/supabaseRealtimeClient';
+import ConfirmDeleteDialog from '../../components/ConfirmDeleteDialog';
+import { supabase } from '../../Supabase/supabaseRealtimeClient';
 
 // Interface alinhada com a tabela socorrista
 interface Socorrista {
@@ -39,12 +39,28 @@ const PartnerList: React.FC = () => {
   // 143: handleConfirmDelete
   // =============================
 
-  // Função para buscar socorristas
-  const loadSocorristas = async () => {
+  // Função para buscar socorristas via API
+  const fetchSocorristasFromAPI = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await buscarSocorristas();
+      const url = process.env.REACT_APP_SUPABASE_URL;
+      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+      if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
+      const accessToken = localStorage.getItem('accessToken');
+      const response = await fetch(`${url}/rest/v1/socorrista`, {
+        method: 'GET',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        } as HeadersInit
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error_description || data.message || `Erro ${response.status}`);
+      }
+      const data = await response.json();
       data.sort((a: SocorristaParams, b: SocorristaParams) => {
         if (a.criado_em && b.criado_em) {
           return new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime();
@@ -61,17 +77,12 @@ const PartnerList: React.FC = () => {
   };
 
   useEffect(() => {
-    loadSocorristas();
-    // Realtime subscription
+    fetchSocorristasFromAPI();
     const channel = supabase
       .channel('public:socorrista')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'socorrista' },
-        (payload) => {
-          loadSocorristas();
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'socorrista' }, (payload) => {
+        fetchSocorristasFromAPI();
+      })
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
@@ -91,21 +102,30 @@ const PartnerList: React.FC = () => {
   const handleSaveEdit = async (data: { empresa: string; contato: string; email: string; telefone: string }) => {
     if (!editSocorrista) return;
     try {
-      await updateSocorrista(editSocorrista.id!, {
-        nome_empresa: data.empresa,
-        nome: data.contato,
-        email: data.email,
-        telefone: data.telefone,
-        status: editSocorrista.status
+      const url = process.env.REACT_APP_SUPABASE_URL;
+      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+      if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
+      const accessToken = localStorage.getItem('accessToken');
+      const response = await fetch(`${url}/rest/v1/socorrista?id=eq.${editSocorrista.id}`, {
+        method: 'PATCH',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify({
+          nome_empresa: data.empresa,
+          nome: data.contato,
+          email: data.email,
+          telefone: data.telefone
+        })
       });
-      const updated = await buscarSocorristas();
-      updated.sort((a: SocorristaParams, b: SocorristaParams) => {
-        if (a.criado_em && b.criado_em) {
-          return new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime();
-        }
-        return (b.id || 0) - (a.id || 0);
-      });
-      setSocorristas(updated);
+      if (!response.ok) {
+        const respData = await response.json().catch(() => ({}));
+        throw new Error(respData.error_description || respData.message || `Erro ${response.status}`);
+      }
+      await fetchSocorristasFromAPI();
       setDialogOpen(false);
       setEditSocorrista(null);
       alert('Socorrista atualizado com sucesso!');
@@ -127,15 +147,6 @@ const PartnerList: React.FC = () => {
   const handleConfirmDelete = async () => {
     if (!socorristaToDelete) return;
     try {
-      await deleteSocorrista(socorristaToDelete.id!);
-      const updated = await buscarSocorristas();
-      updated.sort((a: SocorristaParams, b: SocorristaParams) => {
-        if (a.criado_em && b.criado_em) {
-          return new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime();
-        }
-        return (b.id || 0) - (a.id || 0);
-      });
-      setSocorristas(updated);
       setDeleteDialogOpen(false);
       setSocorristaToDelete(null);
       alert('Socorrista excluído com sucesso!');

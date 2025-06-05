@@ -1,11 +1,42 @@
-import React, { useEffect, useState } from 'react';
-import { Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, CircularProgress, Button } from '@mui/material';
+import React, { useEffect, useState, useRef } from 'react';
+import { Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, CircularProgress, Button, Tabs, Tab } from '@mui/material';
 import PhoneInTalkIcon from '@mui/icons-material/PhoneInTalk';
 import { supabase } from '../../Supabase/supabaseRealtimeClient';
 import CallModal from './CallModal';
-import { getAddressFromCoords } from './getAddressFromCoords';
 
-const ChamadoList: React.FC = () => {
+// Interface para o status
+interface TabPanelProps {
+  children?: React.ReactNode;
+  index: number;
+  value: number;
+}
+
+// Componente TabPanel
+function TabPanel(props: TabPanelProps) {
+  const { children, value, index, ...other } = props;
+
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`chamado-tabpanel-${index}`}
+      aria-labelledby={`chamado-tab-${index}`}
+      {...other}
+    >
+      {value === index && (
+        <Box sx={{ p: 3 }}>
+          {children}
+        </Box>
+      )}
+    </div>
+  );
+}
+
+interface ChamadoListProps {
+  onNewChamado?: () => void;
+}
+
+const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
   const [chamados, setChamados] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -14,19 +45,43 @@ const ChamadoList: React.FC = () => {
   const [finalizingId, setFinalizingId] = useState<number | null>(null);
   const [enderecos, setEnderecos] = useState<{ [id: number]: string | null }>({});
   const [popupChamado, setPopupChamado] = useState<any | null>(null);
+  const [tabValue, setTabValue] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const lastMaxIdRef = useRef<number>(0);
+
+  // Função para filtrar chamados por status
+  const getFilteredChamados = () => {
+    switch (tabValue) {
+      case 0: // Pendentes
+        return chamados.filter(c => c.status === 'Pendente');
+      case 1: // Em análise
+        return chamados.filter(c => c.status === 'Em análise');
+      case 2: // Em andamento
+        return chamados.filter(c => c.status === 'Aceito / Em andamento' || c.status === 'A caminho');
+      case 3: // Finalizados
+        return chamados.filter(c => c.status === 'finalizado');
+      case 4: // Todos
+        return chamados;
+      default:
+        return chamados.filter(c => c.status === 'Pendente');
+    }
+  };
 
   const fetchChamados = async () => {
     setLoading(true);
     setError(null);
     try {
+      setLoading(true);
+      setError(null);
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-      if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
+      if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
+      const accessToken = localStorage.getItem('accessToken');
       const response = await fetch(`${url}/rest/v1/chamado`, {
         method: 'GET',
         headers: {
           'apikey': serviceKey,
-          'Authorization': `Bearer ${serviceKey}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json'
         }
       });
@@ -39,19 +94,18 @@ const ChamadoList: React.FC = () => {
         }
         return (b.id || 0) - (a.id || 0);
       });
-      setChamados(data);
-      // Buscar endereços para cada chamado
-      data.forEach(async (c: any) => {
-        if (c.localizacao && !enderecos[c.id]) {
-          const [lat, lon] = c.localizacao.split(',').map(Number);
-          let endereco = await getAddressFromCoords(lat, lon);
-          if (endereco) {
-            // Remove o CEP se houver
-            endereco = endereco.split(',').filter((part: string) => !/\d{5}-?\d{3}/.test(part)).join(',');
-          }
-          setEnderecos(prev => ({ ...prev, [c.id]: endereco }));
+      // Detecta novo chamado
+      const maxId = data.length > 0 ? Math.max(...data.map((c: any) => c.id || 0)) : 0;
+      if (lastMaxIdRef.current && maxId > lastMaxIdRef.current) {
+        // Novo chamado detectado
+        if (audioRef.current) {
+          audioRef.current.currentTime = 0;
+          audioRef.current.play();
         }
-      });
+        if (onNewChamado) onNewChamado();
+      }
+      lastMaxIdRef.current = maxId;
+      setChamados(data);
     } catch (err: any) {
       setError(err.message || 'Erro ao buscar chamados');
     } finally {
@@ -60,8 +114,29 @@ const ChamadoList: React.FC = () => {
   };
 
   useEffect(() => {
+    audioRef.current = new Audio('/assets/notification.mp3');
+    // Inicializa o lastMaxIdRef com 0 (ou o maior id já existente, se quiser evitar tocar na primeira carga)
+    lastMaxIdRef.current = 0;
+
+    // Desbloqueia o áudio no primeiro clique do usuário
+    const unlockAudio = () => {
+      if (audioRef.current) {
+        audioRef.current.volume = 0;
+        audioRef.current.play().catch(() => {});
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        audioRef.current.volume = 1;
+      }
+      window.removeEventListener('click', unlockAudio);
+    };
+    window.addEventListener('click', unlockAudio);
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+    };
+  }, []);
+
+  useEffect(() => {
     fetchChamados();
-    // Realtime subscription
     const channel = supabase
       .channel('public:chamado')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chamado' }, (payload) => {
@@ -74,33 +149,15 @@ const ChamadoList: React.FC = () => {
   }, []);
 
   const handleFazerChamado = async (chamadoId: number) => {
-    try {
-      const url = process.env.REACT_APP_SUPABASE_URL;
-      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-      if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
-      const administradorId = localStorage.getItem('administradorId');
-      const patchBody: Record<string, any> = { status: 'Em análise' };
-      if (administradorId) patchBody['operador_id'] = Number(administradorId);
-      console.log('[ChamadoList] Fazer o chamado:', { chamadoId, administradorId, patchBody });
-      const response = await fetch(`${url}/rest/v1/chamado?id=eq.${chamadoId}`, {
-        method: 'PATCH',
-        headers: {
-          'apikey': serviceKey,
-          'Authorization': `Bearer ${serviceKey}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal'
-        },
-        body: JSON.stringify(patchBody)
-      });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error_description || data.message || `Erro ${response.status}`);
-      }
-      // Buscar o chamado completo
-      const chamado = chamados.find((c) => c.id === chamadoId);
-      let nome = '';
-      if (chamado && chamado.cliente_id) {
-        // Buscar nome do cliente
+    // Buscar o chamado completo
+    const chamado = chamados.find((c) => c.id === chamadoId);
+    let nome = '';
+    if (chamado && chamado.cliente_id) {
+      // Buscar nome do cliente
+      try {
+        const url = process.env.REACT_APP_SUPABASE_URL;
+        const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+        if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
         const clienteResp = await fetch(`${url}/rest/v1/cliente?id=eq.${chamado.cliente_id}`, {
           headers: {
             'apikey': serviceKey,
@@ -112,18 +169,17 @@ const ChamadoList: React.FC = () => {
         if (clienteData && clienteData[0] && clienteData[0].nome) {
           nome = clienteData[0].nome;
         }
+      } catch (err) {
+        // Se der erro, ignora e segue sem nome
       }
-      setPopupChamado({
-        id: chamadoId,
-        nome,
-        endereco: enderecos[chamadoId] || (chamado && chamado.localizacao) || '',
-      });
-      setPopupChamadoId(chamadoId);
-      setPopupOpen(true);
-    } catch (err) {
-      alert('Erro ao atualizar status para Em análise.');
-      return;
     }
+    setPopupChamado({
+      id: chamadoId,
+      nome,
+      endereco: chamado && chamado.endereco_textual ? chamado.endereco_textual : '',
+    });
+    setPopupChamadoId(chamadoId);
+    setPopupOpen(true);
   };
 
   const handleClosePopup = () => {
@@ -159,9 +215,25 @@ const ChamadoList: React.FC = () => {
     }
   };
 
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+  };
+
   return (
     <Box>
-      <Typography variant="h6">Lista de chamados</Typography>
+      <Typography variant="h6" sx={{ mb: 2 }}>Lista de chamados</Typography>
+      
+      {/* Tabs de Status - Reordenadas com Pendentes primeiro */}
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+        <Tabs value={tabValue} onChange={handleTabChange} aria-label="status tabs">
+          <Tab label="Pendentes" />
+          <Tab label="Em análise" />
+          <Tab label="Em andamento" />
+          <Tab label="Finalizados" />
+          <Tab label="Todos" />
+        </Tabs>
+      </Box>
+
       {loading ? (
         <CircularProgress />
       ) : error ? (
@@ -180,12 +252,12 @@ const ChamadoList: React.FC = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {chamados.map((chamado) => (
+              {getFilteredChamados().map((chamado) => (
                 <TableRow key={chamado.id}>
                   <TableCell>{chamado.id}</TableCell>
                   <TableCell>{chamado.cliente_id}</TableCell>
                   <TableCell>{chamado.status}</TableCell>
-                  <TableCell>{enderecos[chamado.id] || chamado.localizacao || 'Buscando endereço...'}</TableCell>
+                  <TableCell>{chamado.endereco_textual || 'Endereço não disponível'}</TableCell>
                   <TableCell>{formatarDataHora(chamado.data_abertura)}</TableCell>
                   <TableCell>
                     <Button
@@ -193,21 +265,10 @@ const ChamadoList: React.FC = () => {
                       color="primary"
                       variant="contained"
                       sx={{ mr: 1 }}
-                      onClick={() => {
-                        console.log('[ChamadoList] Cliquei no botão Fazer o chamado!', chamado.id);
-                        handleFazerChamado(chamado.id);
-                      }}
+                      onClick={() => handleFazerChamado(chamado.id)}
+                      disabled={chamado.status === 'finalizado'}
                     >
-                      Fazer o chamado
-                    </Button>
-                    <Button
-                      size="small"
-                      color="error"
-                      variant="contained"
-                      disabled={finalizingId === chamado.id}
-                      onClick={() => handleFinalizar(chamado.id)}
-                    >
-                      Finalizar
+                      Visualizar chamado
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -216,8 +277,16 @@ const ChamadoList: React.FC = () => {
           </Table>
         </TableContainer>
       )}
-      {/* Popup de Ligação */}
-      <CallModal open={popupOpen} chamadoId={popupChamadoId} onClose={handleClosePopup} nome={popupChamado?.nome} endereco={popupChamado?.endereco} />
+
+      {/* Modal de Chamada */}
+      <CallModal 
+        open={popupOpen} 
+        chamadoId={popupChamadoId} 
+        onClose={handleClosePopup} 
+        nome={popupChamado?.nome} 
+        endereco={popupChamado?.endereco} 
+        status={chamados.find(c => c.id === popupChamadoId)?.status}
+      />
     </Box>
   );
 };

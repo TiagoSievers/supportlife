@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Typography, Button, Container } from '@mui/material';
 import {
@@ -38,7 +38,94 @@ const MenuButton: React.FC<{
   </Link>
 );
 
+const FALLBACK_COORDS = { lat: -23.5505, lng: -46.6333 };
+
+const getLocationByIP = async () => {
+  try {
+    const response = await fetch('https://get.geojs.io/v1/ip/geo.json');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    if (!data.latitude || !data.longitude) {
+      throw new Error('Invalid IP location data received from GeoJS');
+    }
+    return {
+      lat: parseFloat(data.latitude),
+      lng: parseFloat(data.longitude),
+      accuracy: 5000,
+      source: 'IP'
+    };
+  } catch (error) {
+    console.error('Error getting location by IP (GeoJS):', error);
+    return null;
+  }
+};
+
 const Home: React.FC = () => {
+  const [localizacao, setLocalizacao] = useState<string>('');
+  const [precisao, setPrecisao] = useState<number | null>(null);
+  const [fonte, setFonte] = useState<string>('');
+  const [erro, setErro] = useState<string>('');
+
+  useEffect(() => {
+    const obterLocalizacao = () => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (position) => {
+            setLocalizacao(`${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`);
+            setPrecisao(position.coords.accuracy);
+            setFonte('GPS/Navegador');
+            setErro('');
+          },
+          async (error) => {
+            let msg = 'Não foi possível obter a localização precisa. ';
+            if (error.code === error.PERMISSION_DENIED) {
+              msg += 'Permissão negada. ';
+            }
+            msg += 'Tentando localização aproximada por IP...';
+            setErro(msg);
+            // Fallback por IP
+            const ipLocation = await getLocationByIP();
+            if (ipLocation) {
+              setLocalizacao(`${ipLocation.lat.toFixed(6)}, ${ipLocation.lng.toFixed(6)}`);
+              setPrecisao(ipLocation.accuracy);
+              setFonte('IP');
+              setErro('Localização aproximada por IP.');
+            } else {
+              setLocalizacao(`${FALLBACK_COORDS.lat}, ${FALLBACK_COORDS.lng}`);
+              setPrecisao(null);
+              setFonte('Padrão');
+              setErro('Não foi possível obter sua localização. Usando localização padrão (São Paulo).');
+            }
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+          }
+        );
+      } else {
+        setErro('Seu navegador não suporta geolocalização. Tentando localização aproximada por IP...');
+        (async () => {
+          const ipLocation = await getLocationByIP();
+          if (ipLocation) {
+            setLocalizacao(`${ipLocation.lat.toFixed(6)}, ${ipLocation.lng.toFixed(6)}`);
+            setPrecisao(ipLocation.accuracy);
+            setFonte('IP');
+            setErro('Localização aproximada por IP.');
+          } else {
+            setLocalizacao(`${FALLBACK_COORDS.lat}, ${FALLBACK_COORDS.lng}`);
+            setPrecisao(null);
+            setFonte('Padrão');
+            setErro('Não foi possível obter sua localização. Usando localização padrão (São Paulo).');
+          }
+        })();
+      }
+    };
+    obterLocalizacao();
+  }, []);
+
   return (
     <Container maxWidth="sm" sx={{ 
       display: 'flex',
@@ -85,24 +172,25 @@ const Home: React.FC = () => {
         </Typography>
         
         <SOSButton />
-      </Box>
-
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <MenuButton
-          to="/profile"
-          label="Meu Perfil"
-          icon={<ProfileIcon />}
-        />
-        <MenuButton
-          to="/family"
-          label="Familiares"
-          icon={<FamilyIcon />}
-        />
-        <MenuButton
-          to="/admin"
-          label="Painel Administrativo"
-          icon={<AdminIcon />}
-        />
+        {/* Localização abaixo do botão */}
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="body2" color="text.secondary">
+            Sua localização atual:
+          </Typography>
+          <Typography variant="body2" color="text.primary" sx={{ fontWeight: 'medium' }}>
+            {localizacao}
+          </Typography>
+          {precisao && (
+            <Typography variant="caption" color="text.secondary">
+              Precisão: {Math.round(precisao)} metros ({fonte})
+            </Typography>
+          )}
+          {erro && (
+            <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
+              {erro}
+            </Typography>
+          )}
+        </Box>
       </Box>
     </Container>
   );

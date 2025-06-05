@@ -22,13 +22,10 @@ import Map from './Map';
 import { useNavigate } from 'react-router-dom';
 import Cronometro from './Cronometro';
 import { getAddressFromCoords } from './getAddressFromCoords';
-
-interface FamilyContact {
-  id: string;
-  name: string;
-  phone: string;
-  notified: boolean;
-}
+import { buscarFamiliares } from '../familiares/api';
+import type { FamilyMember } from '../familiares/FamilyMemberDialog';
+import { supabase } from '../../Supabase/supabaseRealtimeClient';
+import { MapMarker } from './Map';
 
 interface Chamado {
   id: number;
@@ -36,6 +33,9 @@ interface Chamado {
   status: string;
   localizacao: string;
   data_abertura: string;
+  notificacao_familiares?: any[];
+  socorrista_id?: string;
+  posicao_inicial_socorrista?: string;
 }
 
 // Interface Location não é mais necessária aqui
@@ -56,10 +56,7 @@ const Emergency: React.FC = () => {
   // Estado location removido
   // const [location, setLocation] = useState<{lat: number, lng: number} | null>(null);
 
-  const [familyContacts] = useState<FamilyContact[]>([
-    { id: '1', name: 'Maria Silva', phone: '(11) 99999-1111', notified: false },
-    { id: '2', name: 'João Oliveira', phone: '(11) 99999-2222', notified: false }
-  ]);
+  const [familyContacts, setFamilyContacts] = useState<FamilyMember[]>([]);
 
   const [notification, setNotification] = useState({
     open: false,
@@ -69,42 +66,92 @@ const Emergency: React.FC = () => {
   });
 
   const [chamado, setChamado] = useState<Chamado | null>(null);
-  const [loadingChamado, setLoadingChamado] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Novo estado para o endereço legível
   const [address, setAddress] = useState<string | null>(null);
 
+  const [notificados, setNotificados] = useState<string[]>([]);
+
+  const [socorristaMarker, setSocorristaMarker] = useState<{ lat: number, lng: number } | null>(null);
+
   const navigate = useNavigate();
 
-  // useEffect para notificação inicial
+  const fetchChamados = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setLoading(true);
+      setError(null);
+      const url = process.env.REACT_APP_SUPABASE_URL;
+      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+      if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
+      const accessToken = localStorage.getItem('accessToken');
+      const clienteId = localStorage.getItem('clienteId');
+      if (!clienteId) throw new Error('Cliente não identificado');
+      const response = await fetch(`${url}/rest/v1/chamado?cliente_id=eq.${clienteId}&order=data_abertura.desc&limit=1`, {
+        method: 'GET',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error_description || data.message || `Erro ${response.status}`);
+      setChamado(data[0] || null);
+    } catch (err: any) {
+      setError(err.message || 'Erro ao buscar chamado');
+      setChamado(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchUltimoChamado = async () => {
-      setLoadingChamado(true);
-      try {
-        const clienteId = localStorage.getItem('clienteId');
-        if (!clienteId) throw new Error('Cliente não identificado');
-        const url = process.env.REACT_APP_SUPABASE_URL;
-        const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-        if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
-        const response = await fetch(`${url}/rest/v1/chamado?cliente_id=eq.${clienteId}&order=data_abertura.desc&limit=1`, {
-          method: 'GET',
-          headers: {
-            'apikey': serviceKey,
-            'Authorization': `Bearer ${serviceKey}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error_description || data.message || `Erro ${response.status}`);
-        setChamado(data[0] || null);
-      } catch (err) {
-        setChamado(null);
-      } finally {
-        setLoadingChamado(false);
-      }
-    };
-    fetchUltimoChamado();
+    fetchChamados();
   }, []);
+
+  // Polling a cada 5 segundos para atualizar o chamado e marcador do socorrista
+  /*
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      await fetchChamados();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+  */
+
+  // Atualiza marcador do socorrista quando chamado muda
+  useEffect(() => {
+    if (chamado?.socorrista_id && chamado?.posicao_inicial_socorrista) {
+      const [lat, lng] = chamado.posicao_inicial_socorrista.split(',').map(Number);
+      setSocorristaMarker({ lat, lng });
+    } else {
+      setSocorristaMarker(null);
+    }
+  }, [chamado?.socorrista_id, chamado?.posicao_inicial_socorrista]);
+
+  // Montar marcadores para o mapa
+  const markers: MapMarker[] = [];
+  if (chamado?.localizacao) {
+    const [lat, lng] = chamado.localizacao.split(',').map(Number);
+    markers.push({
+      position: { lat, lng },
+      title: 'Paciente',
+      description: 'Localização do paciente',
+      type: 'paciente'
+    });
+  }
+  if (socorristaMarker) {
+    markers.push({
+      position: socorristaMarker,
+      title: 'Socorrista',
+      description: 'Posição inicial do socorrista',
+      type: 'socorrista' as const
+    });
+  }
 
   // Buscar endereço legível quando o chamado mudar
   useEffect(() => {
@@ -116,15 +163,32 @@ const Emergency: React.FC = () => {
     }
   }, [chamado?.localizacao]);
 
-  const notifyContact = (contactId: string) => {
-     const contact = familyContacts.find(c => c.id === contactId);
-     setNotification({
-       open: true,
-       // Mensagem mais específica
-       message: contact ? `Familiar ${contact.name} notificado com sucesso!` : 'Erro ao notificar familiar.',
-       severity: contact ? 'success' : 'error'
-     });
-     // Adicionar lógica real de notificação aqui
+  // Buscar familiares reais ao montar
+  useEffect(() => {
+    buscarFamiliares()
+      .then((familiares) => {
+        const members = familiares
+          .filter((f: any) => !f.deletado)
+          .map((f: any) => ({
+            id: f.id?.toString() || '',
+            name: f.nome,
+            relationship: f.parentesco,
+            phone: f.telefone,
+            email: f.email,
+            isEmergencyContact: f.contato_emergencia || false,
+          }));
+        setFamilyContacts(members);
+      })
+      .catch(() => setFamilyContacts([]));
+  }, []);
+
+  const handleNotificar = (member: FamilyMember) => {
+    setNotificados((prev) => [...prev, member.id]);
+    setNotification({
+      open: true,
+      message: `Familiar ${member.name} notificado com sucesso!`,
+      severity: 'success'
+    });
   };
 
   const notifyAllContacts = () => {
@@ -136,26 +200,8 @@ const Emergency: React.FC = () => {
      // Adicionar lógica real de notificação aqui
   };
 
-  const finishEmergency = async () => {
-    if (!chamado) return;
+  const finishEmergency = () => {
     try {
-      const url = process.env.REACT_APP_SUPABASE_URL;
-      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-      if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
-      const response = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
-        method: 'PATCH',
-        headers: {
-          'apikey': serviceKey,
-          'Authorization': `Bearer ${serviceKey}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal'
-        },
-        body: JSON.stringify({ status: 'finalizado' })
-      });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error_description || data.message || `Erro ${response.status}`);
-      }
       setNotification({
         open: true,
         message: 'Emergência finalizada com sucesso!',
@@ -212,7 +258,7 @@ const Emergency: React.FC = () => {
       {/* Conteúdo principal */}
       <Box sx={{ position: 'relative', zIndex: 1 }}>
       <Typography variant="h4" component="h1" gutterBottom sx={{ textAlign: 'center' }}>
-        Emergência Ativa
+        Emergência Ativa{chamado && chamado.id ? ` #${chamado.id}` : ''}
       </Typography>
 
       {/* Card de Status */}
@@ -228,19 +274,25 @@ const Emergency: React.FC = () => {
            <Typography variant="h6" sx={{ flex: 1 }}>
              Status da Emergência
            </Typography>
-           {loadingChamado ? (
+           {loading ? (
              <CircularProgress size={24} />
            ) : chamado ? (
              <Chip
-               label={chamado.status === 'finalizado' ? 'Finalizado' : chamado.status === 'aceito' ? 'Ambulância a caminho' : 'Aguardando atendimento'}
-               color={chamado.status === 'finalizado' ? 'default' : chamado.status === 'aceito' ? 'success' : 'warning'}
+               label={chamado.status}
+               color={
+                 chamado.status === 'finalizado'
+                   ? 'default'
+                   : chamado.status === 'aceito' || chamado.status === 'em andamento'
+                   ? 'success'
+                   : 'warning'
+               }
                sx={{ fontWeight: 500, maxWidth: 180, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
              />
            ) : null}
          </Box>
 
          <Box sx={{ mb: 2 }}>
-           {loadingChamado ? (
+           {loading ? (
              <Typography>Carregando informações do chamado...</Typography>
            ) : chamado ? (
              <>
@@ -280,10 +332,10 @@ const Emergency: React.FC = () => {
       {/* Renderização do Mapa simplificada */}
       <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden', mb: 3 }}>
         <Map
-          center={FALLBACK_CENTER} // Passa um centro inicial/fallback
-          zoom={15} 
-          showUserLocation={true} // Pede ao Map para buscar e mostrar a localização
-          // markers={[]} // Pode passar outros marcadores se necessário, ex: ambulância
+          center={FALLBACK_CENTER}
+          zoom={15}
+          showUserLocation={true}
+          markers={markers}
         />
       </Paper>
       
@@ -302,18 +354,58 @@ const Emergency: React.FC = () => {
          </Box>
          
          <List sx={{ mb: 2 }}>
-           {familyContacts.map((contact) => (
-             <ListItem
-               key={contact.id}
-               sx={{ borderBottom: '1px solid #eee', '&:last-child': { borderBottom: 'none' } }}
-             >
-               <ListItemText
-                 primary={contact.name}
-                 secondary={contact.phone}
-               />
-               <Box sx={{ ml: 2, color: 'success.main', fontWeight: 600 }}>Notificado</Box>
-             </ListItem>
-           ))}
+           {familyContacts.length === 0 ? (
+             <Typography color="text.secondary" sx={{ px: 2, py: 1 }}>Nenhum familiar cadastrado.</Typography>
+           ) : (
+             familyContacts.map((member) => {
+               // Verifica se o familiar está na lista de notificados do chamado
+               const jaNotificado = chamado && Array.isArray(chamado.notificacao_familiares) && chamado.notificacao_familiares.some((f: any) => f.id === member.id);
+               return (
+                 <ListItem
+                   key={member.id}
+                   sx={{ borderBottom: '1px solid #eee', '&:last-child': { borderBottom: 'none' } }}
+                   secondaryAction={
+                     jaNotificado ? (
+                       <Box sx={{
+                         backgroundColor: 'primary.main',
+                         color: 'white',
+                         px: 2,
+                         py: 0.5,
+                         borderRadius: 2,
+                         fontWeight: 500,
+                         fontSize: '0.95rem',
+                         display: 'inline-block',
+                         minWidth: 90,
+                         textAlign: 'center',
+                       }}>
+                         Notificado
+                       </Box>
+                     ) : (
+                       <Box sx={{
+                         backgroundColor: '#e0e0e0',
+                         color: '#222',
+                         px: 2,
+                         py: 0.5,
+                         borderRadius: 2,
+                         fontWeight: 500,
+                         fontSize: '0.95rem',
+                         display: 'inline-block',
+                         minWidth: 90,
+                         textAlign: 'center',
+                       }}>
+                         Notificar
+                       </Box>
+                     )
+                   }
+                 >
+                   <ListItemText
+                     primary={member.name}
+                     secondary={member.phone}
+                   />
+                 </ListItem>
+               );
+             })
+           )}
          </List>
 
          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2 }}>

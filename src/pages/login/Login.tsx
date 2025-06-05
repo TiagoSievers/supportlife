@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { TextField, Button, Container, Typography, Box, CircularProgress } from '@mui/material';
 import { useNavigate, Link } from 'react-router-dom';
-import { login, recoverPassword, fetchUserByEmail, existsInCliente, existsInSocorrista, existsInAdministrador, getClienteByUserId, getSocorristaByUserId, getAdministradorByUserId } from './api';
+import { login, recoverPassword, fetchUserByEmail, existsInCliente, existsInSocorrista, existsInAdministrador, getClienteByUserId, getSocorristaByUserId, getAdministradorByUserId, existsInFamiliar, getFamiliarByUserId } from './api';
 import Logo from '../../assets/cropped_image.png';
 
 const Login: React.FC = () => {
@@ -20,7 +20,6 @@ const Login: React.FC = () => {
       
       const { authData } = await login(email, password);
       const user_id = authData?.user?.id || authData?.user?.user_id || authData?.user_id || authData?.id;
-      console.log('user_id:', user_id);
       if (!user_id) {
         setError('Não foi possível identificar o usuário.');
         setLoading(false);
@@ -60,6 +59,18 @@ const Login: React.FC = () => {
           localStorage.setItem('administradorId', administrador.id.toString());
         }
         navigate('/admin-panel');
+        return;
+      }
+      const isFamiliar = await existsInFamiliar(user_id);
+      if (isFamiliar) {
+        console.log('Usuário pertence à tabela familiares');
+        localStorage.setItem('userEmail', email);
+        localStorage.setItem('userId', user_id);
+        const familiar = await getFamiliarByUserId(user_id);
+        if (familiar && familiar.id) {
+          localStorage.setItem('familiarId', familiar.id.toString());
+        }
+        navigate('/family-emergencies');
         return;
       }
       setError('Usuário não autorizado. Entre em contato com o suporte.');

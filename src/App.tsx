@@ -1,11 +1,10 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Outlet } from 'react-router-dom';
 import { ThemeProvider, CssBaseline, Box } from '@mui/material';
 import theme from './theme';
 import Navbar from './components/Navbar';
 import Home from './pages/home/Home';
-import Profile from './pages/Profile';
-import Family from './pages/Family';
+import Family from './pages/familiares/Family';
 import Admin from './pages/Admin';
 import Emergency from './pages/emergencia/Emergency';
 import AdminPanel from './pages/admin_panel/AdminPanel';
@@ -13,38 +12,59 @@ import ResetPassword from './pages/ResetPassword';
 import PartnerEmergencies from './pages/emer_socorrista/PartnerEmergencies';
 import Login from './pages/login/Login';
 import EmergencySocorrista from './pages/emer_socorrista/EmergencySocorrista';
+import FamilyEmergencies from './pages/familiares/FamilyEmergencies';
+import FamilyEmergencyLocation from './pages/familiares/FamilyEmergencyLocation';
+import EmergencyFamily from './pages/familiares/EmergencyFamily';
+import ProtectedRoute from './components/ProtectedRoute';
+import { useNavigate } from 'react-router-dom';
+import ChamadosClient from './cliente/chamadosClient';
+import CustomMapWithAmbulanceIcon from './pages/emer_socorrista/CustomMapWithAmbulanceIcon';
 
+const ProtectedLayout: React.FC = () => (
+  <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+    <Navbar />
+    <Box
+      component="main"
+      sx={{
+        flexGrow: 1,
+        pt: { xs: 7, sm: 8 },
+        px: { xs: 2, sm: 3 },
+        bgcolor: 'background.default'
+      }}
+    >
+      <Outlet />
+    </Box>
+  </Box>
+);
 
 const App: React.FC = () => {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <Router>
-        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-          <Navbar />
-          <Box
-            component="main"
-            sx={{
-              flexGrow: 1,
-              pt: { xs: 7, sm: 8 }, // Adjusted padding for different screen sizes
-              px: { xs: 2, sm: 3 }, // Added horizontal padding
-              bgcolor: 'background.default'
-            }}
-          >
-            <Routes>
-  <Route path="/" element={<Login />} />
-  <Route path="/profile" element={<Profile />} />
-  <Route path="/family" element={<Family />} />
-  <Route path="/admin" element={<Admin />} />
-  <Route path="/emergency" element={<Emergency />} />
-  <Route path="/emergencia-socorrista" element={<EmergencySocorrista />} />
-  <Route path="/admin-panel" element={<AdminPanel />} />
-  <Route path="/reset-password" element={<ResetPassword />} />
-  <Route path="/home" element={<Home />} />
-  <Route path="/partner-emergencies" element={<PartnerEmergencies />} />
-            </Routes>
-          </Box>
-        </Box>
+        <Routes>
+          {/* Rota pública */}
+          <Route path="/" element={<Login />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+
+          {/* Rotas protegidas */}
+          <Route element={<ProtectedRoute />}> 
+            <Route element={<ProtectedLayout />}> 
+              <Route path="/family" element={<Family />} />
+              <Route path="/admin" element={<Admin />} />
+              <Route path="/emergency" element={<Emergency />} />
+              <Route path="/emergencia-socorrista" element={<EmergencySocorrista />} />
+              <Route path="/admin-panel" element={<AdminPanel />} />
+              <Route path="/home" element={<Home />} />
+              <Route path="/partner-emergencies" element={<PartnerEmergencies />} />
+              <Route path="/family-emergencies" element={<FamilyEmergencies />} />
+              <Route path="/emergency-family" element={<EmergencyFamily />} />
+              <Route path="/family-emergency-location" element={<FamilyEmergencyLocation />} />
+              <Route path="/chamado-cliente" element={<ChamadosClient />} />
+              <Route path="/custom-map-ambulance" element={<CustomMapWithAmbulanceIcon />} />
+            </Route>
+          </Route>
+        </Routes>
       </Router>
     </ThemeProvider>
   );

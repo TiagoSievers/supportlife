@@ -12,10 +12,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, CircularProgress, Typography, Box } from '@mui/material';
-import { buscarClientes, updateCliente, deleteCliente } from './api';
-import AddClientDialog from '../cliente/AddClientDialog';
-import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
-import { supabase } from '../Supabase/supabaseRealtimeClient';
+import { supabase } from '../../Supabase/supabaseRealtimeClient';
+import ConfirmDeleteDialog from '../../components/ConfirmDeleteDialog';
 
 interface Cliente {
   id: number;
@@ -25,32 +23,52 @@ interface Cliente {
   status: string;
   perfil: string;
   criado_em?: string;
+  deletado?: boolean;
 }
 
-const ClientList: React.FC = () => {
+interface ClientListProps {
+  onEditClient: (cliente: Cliente) => void;
+}
+
+const ClientList: React.FC<ClientListProps> = ({ onEditClient }) => {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editClient, setEditClient] = useState<Cliente | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<Cliente | null>(null);
 
-  // Função para buscar clientes
-  const loadClientes = async () => {
+  // Função para buscar clientes via API (conforme exemplo curl)
+  const fetchClientesFromAPI = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await buscarClientes();
+      const url = process.env.REACT_APP_SUPABASE_URL;
+      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+      if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
+      const accessToken = localStorage.getItem('accessToken');
+      const response = await fetch(`${url}/rest/v1/cliente`, {
+        method: 'GET',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error_description || data.message || `Erro ${response.status}`);
+      }
+      const data = await response.json();
+      // Filtrar clientes não deletados
+      const clientesNaoDeletados = data.filter((c: Cliente) => !c.deletado);
       // Ordena do mais recente para o mais antigo
-      data.sort((a: Cliente, b: Cliente) => {
+      clientesNaoDeletados.sort((a: Cliente, b: Cliente) => {
         if (a.criado_em && b.criado_em) {
           return new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime();
         }
-        // Fallback: ordena por id decrescente
         return b.id - a.id;
       });
-      setClientes(data);
+      setClientes(clientesNaoDeletados);
     } catch (error) {
       console.error('Erro ao carregar clientes:', error);
       setError('Não foi possível carregar a lista de clientes. Por favor, tente novamente mais tarde.');
@@ -60,58 +78,17 @@ const ClientList: React.FC = () => {
   };
 
   useEffect(() => {
-    loadClientes();
-    // Realtime subscription
+    fetchClientesFromAPI();
     const channel = supabase
       .channel('public:cliente')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'cliente' },
-        (payload) => {
-          loadClientes();
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cliente' }, (payload) => {
+        fetchClientesFromAPI();
+      })
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
   }, []);
-
-  const handleEdit = (cliente: Cliente) => {
-    setEditClient(cliente);
-    setDialogOpen(true);
-  };
-
-  const handleDialogClose = () => {
-    setDialogOpen(false);
-    setEditClient(null);
-  };
-
-  const handleSaveEdit = async (data: { nome: string; email: string; telefone: string }) => {
-    if (!editClient) return;
-    try {
-      await updateCliente(editClient.id, {
-        nome: data.nome,
-        email: data.email,
-        telefone: data.telefone,
-        status: editClient.status
-      });
-      // Atualiza a lista após edição
-      const updated = await buscarClientes();
-      updated.sort((a: Cliente, b: Cliente) => {
-        if (a.criado_em && b.criado_em) {
-          return new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime();
-        }
-        return b.id - a.id;
-      });
-      setClientes(updated);
-      setDialogOpen(false);
-      setEditClient(null);
-      alert('Cliente atualizado com sucesso!');
-    } catch (error) {
-      alert('Erro ao atualizar cliente.');
-    }
-  };
 
   const handleOpenDeleteDialog = (cliente: Cliente) => {
     setClientToDelete(cliente);
@@ -126,19 +103,30 @@ const ClientList: React.FC = () => {
   const handleConfirmDelete = async () => {
     if (!clientToDelete) return;
     try {
-      await deleteCliente(clientToDelete.id);
-      // Atualiza a lista após exclusão
-      const updated = await buscarClientes();
-      updated.sort((a: Cliente, b: Cliente) => {
-        if (a.criado_em && b.criado_em) {
-          return new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime();
-        }
-        return b.id - a.id;
+      // PATCH para marcar como deletado
+      const url = process.env.REACT_APP_SUPABASE_URL;
+      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+      const accessToken = localStorage.getItem('accessToken');
+      if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
+      const response = await fetch(`${url}/rest/v1/cliente?id=eq.${clientToDelete.id}`, {
+        method: 'PATCH',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify({ deletado: true })
       });
-      setClientes(updated);
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error_description || data.message || `Erro ${response.status}`);
+      }
       setDeleteDialogOpen(false);
       setClientToDelete(null);
       alert('Cliente excluído com sucesso!');
+      // Recarregar lista
+      fetchClientesFromAPI();
     } catch (error) {
       alert('Erro ao excluir cliente.');
     }
@@ -183,7 +171,7 @@ const ClientList: React.FC = () => {
                 <TableCell>{cliente.telefone}</TableCell>
                 <TableCell>{cliente.status}</TableCell>
                 <TableCell>
-                  <Button size="small" color="primary" onClick={() => handleEdit(cliente)}>Editar</Button>
+                  <Button size="small" color="primary" onClick={() => onEditClient(cliente)}>Editar</Button>
                   <Button size="small" color="error" onClick={() => handleOpenDeleteDialog(cliente)}>Excluir</Button>
                 </TableCell>
               </TableRow>
@@ -197,17 +185,6 @@ const ClientList: React.FC = () => {
           )}
         </TableBody>
       </Table>
-      {/* Diálogo de edição */}
-      <AddClientDialog
-        open={dialogOpen}
-        onClose={handleDialogClose}
-        initialData={editClient ? {
-          nome: editClient.nome,
-          email: editClient.email,
-          telefone: editClient.telefone,
-        } : undefined}
-        onSave={editClient ? handleSaveEdit : undefined}
-      />
       <ConfirmDeleteDialog
         open={deleteDialogOpen}
         onClose={handleCloseDeleteDialog}

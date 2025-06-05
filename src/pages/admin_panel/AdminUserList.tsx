@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, CircularProgress, Typography, Box } from '@mui/material';
-import { buscarAdminUsers, updateAdminUser, deleteAdminUser } from './api';
-import ConfirmDeleteDialog from '../components/ConfirmDeleteDialog';
+import { supabase } from '../../Supabase/supabaseRealtimeClient';
+import ConfirmDeleteDialog from '../../components/ConfirmDeleteDialog';
 import AddUserAdminDialog from './AddUserAdminDialog';
-import { supabase } from '../Supabase/supabaseRealtimeClient';
 
 interface UsuarioAdmin {
   id?: number;
@@ -23,11 +22,28 @@ const AdminUserList: React.FC = () => {
   const [editUsuario, setEditUsuario] = useState<UsuarioAdmin | null>(null);
 
   useEffect(() => {
-    const loadUsuarios = async () => {
+    // Função para buscar usuários administrativos via API
+    const fetchAdminUsersFromAPI = async () => {
       try {
         setLoading(true);
         setError(null);
-        const data = await buscarAdminUsers();
+        const url = process.env.REACT_APP_SUPABASE_URL;
+        const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+        if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
+        const accessToken = localStorage.getItem('accessToken');
+        const response = await fetch(`${url}/rest/v1/administrador?deletado=is.false`, {
+          method: 'GET',
+          headers: {
+            'apikey': serviceKey,
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          } as HeadersInit
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => ({}));
+          throw new Error(data.error_description || data.message || `Erro ${response.status}`);
+        }
+        const data = await response.json();
         data.sort((a: UsuarioAdmin, b: UsuarioAdmin) => {
           if ((a as any).data_cadastro && (b as any).data_cadastro) {
             return new Date((b as any).data_cadastro).getTime() - new Date((a as any).data_cadastro).getTime();
@@ -42,14 +58,13 @@ const AdminUserList: React.FC = () => {
         setLoading(false);
       }
     };
-
-    loadUsuarios();
+    fetchAdminUsersFromAPI();
 
     // Realtime subscription
     const channel = supabase
       .channel('public:administrador')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'administrador' }, (payload) => {
-        loadUsuarios();
+        fetchAdminUsersFromAPI();
       })
       .subscribe();
 
@@ -69,17 +84,26 @@ const AdminUserList: React.FC = () => {
   };
 
   const handleConfirmDelete = async () => {
-    if (!userToDelete) return;
+    if (!userToDelete || !userToDelete.id) return;
     try {
-      await deleteAdminUser(Number(userToDelete.id));
-      const updated = await buscarAdminUsers();
-      updated.sort((a: UsuarioAdmin, b: UsuarioAdmin) => {
-        if ((a as any).data_cadastro && (b as any).data_cadastro) {
-          return new Date((b as any).data_cadastro).getTime() - new Date((a as any).data_cadastro).getTime();
-        }
-        return (b.id || 0) - (a.id || 0);
+      const url = process.env.REACT_APP_SUPABASE_URL;
+      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+      if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
+      const accessToken = localStorage.getItem('accessToken');
+      const response = await fetch(`${url}/rest/v1/administrador?id=eq.${userToDelete.id}`, {
+        method: 'PATCH',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify({ deletado: true })
       });
-      setUsuarios(updated as UsuarioAdmin[]);
+      if (!response.ok) {
+        const respData = await response.json().catch(() => ({}));
+        throw new Error(respData.error_description || respData.message || `Erro ${response.status}`);
+      }
       setDeleteDialogOpen(false);
       setUserToDelete(null);
       alert('Usuário administrativo excluído com sucesso!');
@@ -101,19 +125,28 @@ const AdminUserList: React.FC = () => {
   const handleSaveEdit = async (data: { nome: string; email: string; perfil: string }) => {
     if (!editUsuario || !editUsuario.id) return;
     try {
-      await updateAdminUser(editUsuario.id, {
-        nome: data.nome,
-        email: data.email,
-        perfil: data.perfil,
+      const url = process.env.REACT_APP_SUPABASE_URL;
+      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+      if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
+      const accessToken = localStorage.getItem('accessToken');
+      const response = await fetch(`${url}/rest/v1/administrador?id=eq.${editUsuario.id}`, {
+        method: 'PATCH',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify({
+          nome: data.nome,
+          email: data.email,
+          perfil: data.perfil
+        })
       });
-      const updated = await buscarAdminUsers();
-      updated.sort((a: UsuarioAdmin, b: UsuarioAdmin) => {
-        if ((a as any).data_cadastro && (b as any).data_cadastro) {
-          return new Date((b as any).data_cadastro).getTime() - new Date((a as any).data_cadastro).getTime();
-        }
-        return (b.id || 0) - (a.id || 0);
-      });
-      setUsuarios(updated as UsuarioAdmin[]);
+      if (!response.ok) {
+        const respData = await response.json().catch(() => ({}));
+        throw new Error(respData.error_description || respData.message || `Erro ${response.status}`);
+      }
       setEditDialogOpen(false);
       setEditUsuario(null);
       alert('Usuário administrativo atualizado com sucesso!');

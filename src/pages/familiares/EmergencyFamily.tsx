@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Typography, Paper, CircularProgress, Button } from '@mui/material';
-import MapPatnerEme from './MapPatnerEme';
-import Cronometro from './CronometroSocorrista';
-import { getAddressFromCoords } from './getAddressFromCoordsSocorrista';
+import MapFamiliarEme from './MapFamiliarEme';
+import { getAddressFromCoords } from '../emer_socorrista/getAddressFromCoordsSocorrista';
 import { useNavigate } from 'react-router-dom';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
-import { calcularDistanciaTotalKm } from './MapPatnerEme';
+import { calcularDistanciaTotalKm } from './MapFamiliarEme';
 
 interface Chamado {
   id: string;
@@ -18,7 +17,7 @@ interface Chamado {
 
 const socorristaCoords = { lat: -25.4284, lng: -49.2733 };
 
-const EmergencySocorrista: React.FC = () => {
+const EmergencyFamily: React.FC = () => {
   const [chamado, setChamado] = useState<Chamado | null>(null);
   const [endereco, setEndereco] = useState<string | null>(null);
   const [distancia, setDistancia] = useState<string>('');
@@ -101,105 +100,12 @@ const EmergencySocorrista: React.FC = () => {
           setRouteDuration(null);
         })
         .finally(() => setLoadingRoute(false));
-    }
-  }, [chamado]);
-
-  useEffect(() => {
-    if (routeCoords.length > 1 && routeDuration) {
-      let idx = 0;
-      setSocorristaPos(routeCoords[0]);
-      // Deixe a movimentação mais rápida: metade do tempo atual
-      const intervalMs = ((routeDuration * 1000) / routeCoords.length) / 2;
-      const url = process.env.REACT_APP_SUPABASE_URL;
-      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-      const accessToken = localStorage.getItem('accessToken');
-      const interval = setInterval(async () => {
-        idx++;
-        if (idx < routeCoords.length) {
-          setSocorristaPos(routeCoords[idx]);
-          // PATCH a cada movimento
-          if (chamado && url && serviceKey && accessToken) {
-            try {
-              await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
-                method: 'PATCH',
-                headers: {
-                  'apikey': serviceKey,
-                  'Authorization': `Bearer ${accessToken}`,
-                  'Content-Type': 'application/json',
-                  'Prefer': 'return=minimal'
-                },
-                body: JSON.stringify({
-                  posicao_inicial_socorrista: `${routeCoords[idx].lat},${routeCoords[idx].lng}`
-                })
-              });
-            } catch (error) {
-              console.error('Erro ao atualizar posição:', error);
-            }
-          }
-        } else {
-          clearInterval(interval);
-        }
-      }, intervalMs);
-      return () => clearInterval(interval);
-    }
-  }, [routeCoords, routeDuration, chamado]);
-
-  // Atualiza a posição do socorrista em tempo real na tabela chamado
-  useEffect(() => {
-    let watchId: number;
-
-    const updateSocorristaPosition = async (position: GeolocationPosition) => {
-      const { latitude, longitude } = position.coords;
-      const newPosition = { lat: latitude, lng: longitude };
-      // Prende ao ponto mais próximo da rota
-      let closest = newPosition;
-      if (routeCoords.length > 0) {
-        closest = getClosestRoutePoint(newPosition, routeCoords);
+      // Atualizar posição do socorrista a partir do chamado
+      if (chamado.posicao_inicial_socorrista) {
+        const [socLat, socLng] = chamado.posicao_inicial_socorrista.split(',').map(Number);
+        setSocorristaPos({ lat: socLat, lng: socLng });
       }
-      setSocorristaPos(closest);
-
-      // Atualizar posição no banco de dados
-      if (chamado) {
-        try {
-          const url = process.env.REACT_APP_SUPABASE_URL;
-          const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-          const accessToken = localStorage.getItem('accessToken');
-          if (!url || !serviceKey || !accessToken) return;
-          await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
-            method: 'PATCH',
-            headers: {
-              'apikey': serviceKey,
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'return=minimal'
-            },
-            body: JSON.stringify({
-              posicao_inicial_socorrista: `${latitude},${longitude}`
-            })
-          });
-        } catch (error) {
-          console.error('Erro ao atualizar posição:', error);
-        }
-      }
-    };
-
-    if ("geolocation" in navigator) {
-      watchId = navigator.geolocation.watchPosition(
-        updateSocorristaPosition,
-        (error) => console.error('Erro ao obter localização:', error),
-        {
-          enableHighAccuracy: true,
-          maximumAge: 0,
-          timeout: 5000
-        }
-      );
     }
-
-    return () => {
-      if (watchId) {
-        navigator.geolocation.clearWatch(watchId);
-      }
-    };
   }, [chamado]);
 
   useEffect(() => {
@@ -376,7 +282,7 @@ const EmergencySocorrista: React.FC = () => {
               }
               return (
                 <Box sx={{ width: '100%', minHeight: 350, maxHeight: 500, position: 'relative', zIndex: 1 }}>
-                  <MapPatnerEme
+                  <MapFamiliarEme
                     center={{
                       lat: Number(chamado.localizacao.split(',')[0]),
                       lng: Number(chamado.localizacao.split(',')[1])
@@ -453,58 +359,12 @@ const EmergencySocorrista: React.FC = () => {
                   variant="contained"
                   color="primary"
                   sx={{ minWidth: 120, fontWeight: 600 }}
-                  onClick={async () => {
-                    if (!chamado) return;
-                    // If this is a mock chamado, apenas simula
-                    if (chamado.id === '123') {
-                      setChegou(true);
-                      return;
-                    }
-                    const url = process.env.REACT_APP_SUPABASE_URL;
-                    const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-                    const accessToken = localStorage.getItem('accessToken');
-                    if (!url || !serviceKey) {
-                      alert('Supabase URL ou Service Key não definidos');
-                      return;
-                    }
-                    if (!accessToken) {
-                      alert('Token de acesso não encontrado. Faça login novamente.');
-                      return;
-                    }
-                    setLoading(true);
-                    try {
-                      const response = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
-                        method: 'PATCH',
-                        headers: {
-                          'apikey': serviceKey,
-                          'Authorization': `Bearer ${accessToken}`,
-                          'Content-Type': 'application/json',
-                          'Prefer': 'return=minimal'
-                        },
-                        body: JSON.stringify({ status: 'Ambulância no local' })
-                      });
-                      if (!response.ok) {
-                        const data = await response.json();
-                        throw new Error(data.error_description || data.message || `Erro ${response.status}`);
-                      }
-                      setChegou(true);
-                    } catch (err: any) {
-                      alert('Erro ao atualizar status: ' + (err.message || err));
-                    } finally {
-                      setLoading(false);
-                    }
+                  onClick={() => {
+                    navigate('/family-emergencies');
                   }}
                   disabled={loading}
                 >
-                  Cheguei
-                </Button>
-                <Button
-                  variant="outlined"
-                  color="error"
-                  sx={{ minWidth: 120, fontWeight: 600 }}
-                  onClick={finalizarAtendimento}
-                >
-                  Cancelar
+                  Voltar
                 </Button>
               </Box>
             )}
@@ -515,44 +375,11 @@ const EmergencySocorrista: React.FC = () => {
                   variant="contained"
                   color="success"
                   sx={{ minWidth: 220, fontWeight: 700, fontSize: 18, py: 1.5, borderRadius: 3, boxShadow: 3 }}
-                  onClick={async () => {
-                    if (!chamado) return;
-                    const url = process.env.REACT_APP_SUPABASE_URL;
-                    const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-                    const accessToken = localStorage.getItem('accessToken');
-                    if (!url || !serviceKey) {
-                      alert('Supabase URL ou Service Key não definidos');
-                      return;
-                    }
-                    if (!accessToken) {
-                      alert('Token de acesso não encontrado. Faça login novamente.');
-                      return;
-                    }
-                    setLoading(true);
-                    try {
-                      const response = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
-                        method: 'PATCH',
-                        headers: {
-                          'apikey': serviceKey,
-                          'Authorization': `Bearer ${accessToken}`,
-                          'Content-Type': 'application/json',
-                          'Prefer': 'return=minimal'
-                        },
-                        body: JSON.stringify({ status: 'concluído' })
-                      });
-                      if (!response.ok) {
-                        const data = await response.json();
-                        throw new Error(data.error_description || data.message || `Erro ${response.status}`);
-                      }
-                      navigate('/partner-emergencies');
-                    } catch (err: any) {
-                      alert('Erro ao concluir chamado: ' + (err.message || err));
-                    } finally {
-                      setLoading(false);
-                    }
+                  onClick={() => {
+                    navigate('/family-emergencies');
                   }}
                 >
-                  Chamado concluído
+                  Voltar para lista
                 </Button>
               </Box>
             )}
@@ -567,4 +394,4 @@ const EmergencySocorrista: React.FC = () => {
   );
 };
 
-export default EmergencySocorrista; 
+export default EmergencyFamily; 
