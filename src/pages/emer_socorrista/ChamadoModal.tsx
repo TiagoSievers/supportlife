@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography, Box } from '@mui/material';
 import { Chamado } from './chamadoSocorristaList';
 import MapPatner from './MapPatner';
-import { getAddressFromCoords } from './getAddressFromCoordsSocorrista';
+// Removido import getAddressFromCoords - usando endereco_textual do banco
 import { useNavigate } from 'react-router-dom';
 
 interface ChamadoModalProps {
@@ -13,7 +13,6 @@ interface ChamadoModalProps {
 }
 
 const ChamadoModal: React.FC<ChamadoModalProps> = ({ open, chamado, onClose, onFazerAtendimento }) => {
-  const [endereco, setEndereco] = React.useState<string | null>(null);
   const [distancia, setDistancia] = React.useState<string>('');
   const [estimativaTempo, setEstimativaTempo] = React.useState<string>('');
   const [nomeCliente, setNomeCliente] = useState<string>('');
@@ -22,10 +21,9 @@ const ChamadoModal: React.FC<ChamadoModalProps> = ({ open, chamado, onClose, onF
   const [routeDuration, setRouteDuration] = useState<number | null>(null);
   const navigate = useNavigate();
 
+  // Endereço agora vem diretamente do campo endereco_textual do banco
   React.useEffect(() => {
-    if (chamado && chamado.localizacao) {
-      const [lat, lon] = chamado.localizacao.split(',').map(Number);
-      getAddressFromCoords(lat, lon).then(setEndereco);
+    if (chamado) {
       setDistancia('');
       setEstimativaTempo('');
     }
@@ -271,12 +269,7 @@ const ChamadoModal: React.FC<ChamadoModalProps> = ({ open, chamado, onClose, onF
             </Box>
             {chamado.localizacao && (
               <Box sx={{ mt: 0.25 }}>
-                {/* Log da localização atual do usuário */}
-                {userLocation && (
-                  <Typography sx={{ fontSize: 12, color: 'text.secondary', mb: 1 }}>
-                    [LOG] Sua localização atual: lat {userLocation.lat}, lng {userLocation.lng}
-                  </Typography>
-                )}
+
                 <MapPatner
                   center={{
                     lat: Number(chamado.localizacao.split(',')[0]),
@@ -290,17 +283,13 @@ const ChamadoModal: React.FC<ChamadoModalProps> = ({ open, chamado, onClose, onF
                         lng: Number(chamado.localizacao.split(',')[1])
                       },
                       title: 'Local do chamado'
-                    },
-                    ...(userLocation ? [{
-                      position: userLocation,
-                      title: 'Sua localização'
-                    }] : [])
+                    }
                   ]}
-                  chamadoId={Number(chamado.id)}
                   routeCoords={routeCoords}
+                  ambulancePosition={userLocation || undefined}
                 />
                 <Typography sx={{ fontSize: 15, color: 'text.secondary', mb: 3, mt: 3 }}>
-                  <strong>Endereço:</strong> {endereco || chamado.localizacao}
+                  <strong>Endereço:</strong> {chamado.endereco_textual || chamado.localizacao}
                 </Typography>
               </Box>
             )}

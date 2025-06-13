@@ -14,6 +14,8 @@ import React, { useState, useEffect } from 'react';
 import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, CircularProgress, Typography, Box } from '@mui/material';
 import { supabase } from '../../Supabase/supabaseRealtimeClient';
 import ConfirmDeleteDialog from '../../components/ConfirmDeleteDialog';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 
 interface Cliente {
   id: number;
@@ -36,6 +38,8 @@ const ClientList: React.FC<ClientListProps> = ({ onEditClient }) => {
   const [error, setError] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState<Cliente | null>(null);
+  const theme = useTheme();
+  const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
 
   // Função para buscar clientes via API (conforme exemplo curl)
   const fetchClientesFromAPI = async () => {
@@ -149,28 +153,28 @@ const ClientList: React.FC<ClientListProps> = ({ onEditClient }) => {
   }
 
   return (
-    <TableContainer component={Paper}>
-      <Table sx={{ minWidth: 650 }} aria-label="tabela de clientes">
+    <TableContainer component={Paper} sx={{ overflowX: 'auto', maxWidth: '100vw' }}>
+      <Table aria-label="tabela de clientes">
         <TableHead>
           <TableRow>
-            <TableCell>ID</TableCell>
-            <TableCell>Nome</TableCell>
-            <TableCell>Email</TableCell>
-            <TableCell>Telefone</TableCell>
-            <TableCell>Status</TableCell>
-            <TableCell>Ações</TableCell>
+            <TableCell sx={!isDesktop ? { width: '33.33%' } : {}}>ID</TableCell>
+            <TableCell sx={!isDesktop ? { width: '33.33%' } : {}}>Nome</TableCell>
+            {isDesktop && <TableCell>Email</TableCell>}
+            {isDesktop && <TableCell>Telefone</TableCell>}
+            {isDesktop && <TableCell>Status</TableCell>}
+            <TableCell sx={!isDesktop ? { width: '33.33%', minWidth: 100, whiteSpace: 'nowrap' } : { minWidth: 100, whiteSpace: 'nowrap' }}>Ações</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
           {clientes.length > 0 ? (
             clientes.map((cliente) => (
               <TableRow key={cliente.id}>
-                <TableCell>{cliente.id}</TableCell>
-                <TableCell>{cliente.nome}</TableCell>
-                <TableCell>{cliente.email}</TableCell>
-                <TableCell>{cliente.telefone}</TableCell>
-                <TableCell>{cliente.status}</TableCell>
-                <TableCell>
+                <TableCell sx={!isDesktop ? { width: '33.33%' } : {}}>{cliente.id}</TableCell>
+                <TableCell sx={!isDesktop ? { width: '33.33%' } : {}}>{cliente.nome}</TableCell>
+                {isDesktop && <TableCell>{cliente.email}</TableCell>}
+                {isDesktop && <TableCell>{cliente.telefone}</TableCell>}
+                {isDesktop && <TableCell>{cliente.status}</TableCell>}
+                <TableCell sx={!isDesktop ? { width: '33.33%', minWidth: 100, whiteSpace: 'nowrap' } : { minWidth: 100, whiteSpace: 'nowrap' }}>
                   <Button size="small" color="primary" onClick={() => onEditClient(cliente)}>Editar</Button>
                   <Button size="small" color="error" onClick={() => handleOpenDeleteDialog(cliente)}>Excluir</Button>
                 </TableCell>
@@ -178,7 +182,7 @@ const ClientList: React.FC<ClientListProps> = ({ onEditClient }) => {
             ))
           ) : (
             <TableRow>
-              <TableCell colSpan={6} align="center">
+              <TableCell colSpan={isDesktop ? 6 : 3} align="center" sx={!isDesktop ? { width: '33.33%' } : { minWidth: 100, whiteSpace: 'nowrap' }}>
                 Nenhum cliente encontrado
               </TableCell>
             </TableRow>

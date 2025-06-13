@@ -5,7 +5,6 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import ambulanceIcon from '../../assets/ambulance-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
-import rescuerIcon from '../../assets/user-3296 (2).png';
 
 interface MapMarker {
   position: {
@@ -28,7 +27,7 @@ interface MapPatnerProps {
   showUserLocation?: boolean;
   children?: React.ReactNode;
   ambulancePosition?: { lat: number; lng: number };
-  rescuerPosition?: { lat: number; lng: number };
+  patientPosition?: { lat: number; lng: number };
 }
 
 const ambulanceLeafletIcon = L.icon({
@@ -41,18 +40,17 @@ const ambulanceLeafletIcon = L.icon({
   popupAnchor:  [0, -38]
 });
 
-const rescuerLeafletIcon = L.icon({
-  iconUrl: rescuerIcon,
-  shadowUrl: markerShadow,
-  iconSize:     [38, 38],
-  shadowSize:   [41, 41],
-  iconAnchor:   [19, 38],
-  shadowAnchor: [12, 41],
-  popupAnchor:  [0, -38]
+// Ícone padrão do Leaflet para garantir que apareça corretamente
+const defaultLeafletIcon = L.icon({
+  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
 });
 
-const center = { lat: -23.55052, lng: -46.633308 };
-const rescuerPosition = { lat: -23.552, lng: -46.634 };
+// Removido centro padrão - usar apenas dados do banco
 
 const MapPatnerNavigation: React.FC<MapPatnerProps> = (props) => {
   return <MapPatnerMap {...props} />;
@@ -65,32 +63,25 @@ const MapPatnerMap: React.FC<MapPatnerProps> = ({
   routeCoords = [],
   children,
   ambulancePosition,
-  rescuerPosition
+  patientPosition
 }) => {
-  React.useEffect(() => {
-    if (ambulancePosition) {
-      console.log('Socorrista mudou de posição:', ambulancePosition);
-    }
-  }, [ambulancePosition]);
 
-  if (!center) return null;
-
-  // Calcular o índice do ponto mais próximo do socorrista na rota
-  let routeToShow = routeCoords;
-  if (ambulancePosition && routeCoords.length > 1) {
-    let minDist = Infinity;
-    let idx = 0;
-    for (let i = 0; i < routeCoords.length; i++) {
-      const p = routeCoords[i];
-      const dist = Math.hypot(ambulancePosition.lat - p.lat, ambulancePosition.lng - p.lng);
-      if (dist < minDist) {
-        minDist = dist;
-        idx = i;
-      }
-    }
-    // Só mostra o trecho ainda não percorrido
-    routeToShow = routeCoords.slice(idx);
+  if (!center || !center.lat || !center.lng) {
+    console.log('[MapClient] Centro inválido:', center);
+    return <div>Aguardando localização...</div>;
   }
+
+  // Usar a rota fornecida sem modificações (será calculada dinamicamente no componente pai)
+  const routeToShow = routeCoords;
+  
+  // Determinar o centro do mapa: usar o center passado como prop
+  const mapCenter = center;
+  
+  console.log('[MapClient] Renderizando mapa com coordenadas:', {
+    center: mapCenter,
+    patientPosition,
+    ambulancePosition
+  });
 
   return (
     <Box sx={{ width: '100%', position: 'relative' }}>
@@ -109,7 +100,7 @@ const MapPatnerMap: React.FC<MapPatnerProps> = ({
         }}
       >
         <MapContainer
-          center={[center.lat, center.lng]}
+          center={[mapCenter.lat, mapCenter.lng]}
           zoom={zoom}
           style={{ height: '100%', width: '100%' }}
         >
@@ -117,23 +108,37 @@ const MapPatnerMap: React.FC<MapPatnerProps> = ({
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          {routeToShow && routeToShow.length > 1 && (
+          {/* Só mostra a rota se há ambulância, paciente e rota válida */}
+          {ambulancePosition && patientPosition && routeToShow && routeToShow.length >= 2 && (
             <Polyline
               positions={routeToShow.map(coord => [coord.lat, coord.lng])}
               pathOptions={{ color: 'blue', weight: 4 }}
             />
           )}
           {children}
-          <Marker position={ambulancePosition || center} icon={ambulanceLeafletIcon}>
-            <Popup>
-              Marcador de ambulância personalizado!
-            </Popup>
-          </Marker>
-          <Marker position={center}>
-            <Popup>
-              Local do chamado (paciente)
-            </Popup>
-          </Marker>
+          
+          {/* Componente para ajustar bounds automaticamente - só quando há ambulância E paciente e rota */}
+          {ambulancePosition && patientPosition && routeToShow && routeToShow.length >= 2 && (
+            <FitBoundsToPositions 
+              ambulancePosition={ambulancePosition} 
+              patientPosition={patientPosition} 
+            />
+          )}
+          
+          {ambulancePosition && (
+            <Marker position={ambulancePosition} icon={ambulanceLeafletIcon}>
+              <Popup>
+                Ambulância
+              </Popup>
+            </Marker>
+          )}
+          {patientPosition && (
+            <Marker position={patientPosition} icon={defaultLeafletIcon}>
+              <Popup>
+                Local do chamado (paciente)
+              </Popup>
+            </Marker>
+          )}
         </MapContainer>
       </Paper>
     </Box>
@@ -150,6 +155,24 @@ function FitBounds({ markers }: { markers: MapMarker[] }) {
       map.fitBounds(bounds, { padding: [40, 40] });
     }
   }, [markers, map]);
+  return null;
+}
+
+function FitBoundsToPositions({ 
+  ambulancePosition, 
+  patientPosition 
+}: { 
+  ambulancePosition: { lat: number; lng: number };
+  patientPosition: { lat: number; lng: number };
+}) {
+  const map = useMap();
+  React.useEffect(() => {
+    const bounds = new L.LatLngBounds([
+      [ambulancePosition.lat, ambulancePosition.lng],
+      [patientPosition.lat, patientPosition.lng]
+    ]);
+    map.fitBounds(bounds, { padding: [50, 50] });
+  }, [ambulancePosition, patientPosition, map]);
   return null;
 }
 

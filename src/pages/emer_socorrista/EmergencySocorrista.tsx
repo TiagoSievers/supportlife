@@ -1,11 +1,14 @@
-import React, { useEffect, useState } from 'react';
-import { Box, Typography, Paper, CircularProgress, Button } from '@mui/material';
-import MapPatnerEme from './MapPatnerEme';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { Box, Typography, Paper, CircularProgress, Button, IconButton } from '@mui/material';
+import MapPatner from './MapPatner';
 import Cronometro from './CronometroSocorrista';
-import { getAddressFromCoords } from './getAddressFromCoordsSocorrista';
+
 import { useNavigate } from 'react-router-dom';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
-import { calcularDistanciaTotalKm } from './MapPatnerEme';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import StopIcon from '@mui/icons-material/Stop';
+import { calcularDistanciaTotalKm } from './MapPatner';
+import { supabase } from '../../Supabase/supabaseRealtimeClient';
 
 interface Chamado {
   id: string;
@@ -14,6 +17,7 @@ interface Chamado {
   data_abertura: string;
   localizacao: string;
   posicao_inicial_socorrista?: string;
+  endereco_textual?: string;
 }
 
 const socorristaCoords = { lat: -25.4284, lng: -49.2733 };
@@ -27,12 +31,134 @@ const EmergencySocorrista: React.FC = () => {
   const [routeCoords, setRouteCoords] = useState<{ lat: number; lng: number }[]>([]);
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [socorristaPos, setSocorristaPos] = useState(socorristaCoords);
+  const [currentRouteCoords, setCurrentRouteCoords] = useState<{ lat: number; lng: number }[]>([]);
   const [routeDuration, setRouteDuration] = useState<number | null>(null); // duração em segundos
   const [distanciaRota, setDistanciaRota] = useState<number | null>(null);
   const [tempoEstimado60, setTempoEstimado60] = useState<number | null>(null);
   const [tempoEstimadoSimulacao, setTempoEstimadoSimulacao] = useState<number | null>(null);
   const [chegou, setChegou] = useState(false);
+  const [simulacaoAtiva, setSimulacaoAtiva] = useState(false);
+  const [intervalSimulacao, setIntervalSimulacao] = useState<NodeJS.Timeout | null>(null);
+  const [trackingAtivo, setTrackingAtivo] = useState(false);
+  const [watchId, setWatchId] = useState<number | null>(null);
+  const [geoError, setGeoError] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  // Estados para notificação sonora
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const lastMaxIdRef = useRef<number>(0);
+
+  // Rate limiting para API OSRM - mesmo sistema do EmergencyFamily
+  const lastOSRMCall = useRef<number>(0);
+  const MIN_OSRM_INTERVAL = 30000; // 30 segundos entre chamadas
+  const isOSRMCallInProgress = useRef<boolean>(false); // Flag para evitar chamadas simultâneas
+  const lastSocorristaPos = useRef<{ lat: number; lng: number } | null>(null); // Para evitar loops
+  const lastDBUpdate = useRef<number>(0); // Controle de atualizações do banco
+  const MIN_DB_UPDATE_INTERVAL = 8000; // 8 segundos entre atualizações do banco
+
+  // Inicializar áudio para notificações
+  useEffect(() => {
+    audioRef.current = new Audio('/assets/notification.mp3');
+    // Inicializa o lastMaxIdRef com 0
+    lastMaxIdRef.current = 0;
+
+    // Desbloqueia o áudio no primeiro clique do usuário
+    const unlockAudio = () => {
+      if (audioRef.current) {
+        audioRef.current.volume = 0;
+        audioRef.current.play().catch(() => {});
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        audioRef.current.volume = 1;
+      }
+      window.removeEventListener('click', unlockAudio);
+    };
+    window.addEventListener('click', unlockAudio);
+    
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+    };
+  }, []);
+
+  // Função para buscar todos os chamados e detectar novos
+  const fetchChamados = useCallback(async () => {
+    const url = process.env.REACT_APP_SUPABASE_URL;
+    const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+    const accessToken = localStorage.getItem('accessToken');
+    
+    if (!url || !serviceKey || !accessToken) return;
+
+    try {
+      const response = await fetch(`${url}/rest/v1/chamado`, {
+        method: 'GET',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      const data = await response.json();
+      if (!response.ok) return;
+
+      // Ordenar por data_abertura decrescente
+      data.sort((a: any, b: any) => {
+        if (a.data_abertura && b.data_abertura) {
+          return new Date(b.data_abertura).getTime() - new Date(a.data_abertura).getTime();
+        }
+        return (b.id || 0) - (a.id || 0);
+      });
+
+      // Detecta novo chamado
+      const maxId = data.length > 0 ? Math.max(...data.map((c: any) => c.id || 0)) : 0;
+      if (lastMaxIdRef.current && maxId > lastMaxIdRef.current) {
+        // Novo chamado detectado
+        if (audioRef.current) {
+          audioRef.current.currentTime = 0;
+          audioRef.current.play();
+        }
+        console.log('[SOCORRISTA] Novo chamado detectado - som tocado');
+      }
+      lastMaxIdRef.current = maxId;
+
+    } catch (error) {
+      console.error('[SOCORRISTA] Erro ao buscar chamados:', error);
+    }
+  }, []);
+
+  // Monitorar novos chamados via realtime
+  useEffect(() => {
+    // Busca inicial para estabelecer baseline
+    fetchChamados();
+
+    // Subscription para novos chamados (INSERT)
+    const channel = supabase
+      .channel('public:chamado-socorrista')
+      .on('postgres_changes', 
+        { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'chamado'
+        }, 
+        (payload) => {
+          console.log('[REALTIME SOCORRISTA] Novo chamado detectado:', payload);
+          
+          // Toca o som imediatamente
+          if (audioRef.current) {
+            audioRef.current.currentTime = 0;
+            audioRef.current.play();
+          }
+          
+          // Atualiza a lista de chamados
+          fetchChamados();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchChamados]);
 
   useEffect(() => {
     // Buscar chamado real pelo id salvo no localStorage
@@ -67,11 +193,24 @@ const EmergencySocorrista: React.FC = () => {
         });
         const data = await response.json();
         if (Array.isArray(data) && data.length > 0) {
-          setChamado(data[0]);
+          const chamadoData = data[0];
+          console.log('[EmergencySocorrista] Chamado carregado da API:', chamadoData);
+          console.log('[EmergencySocorrista] Posição do socorrista no banco:', chamadoData.posicao_inicial_socorrista);
+          // Ordenar por data de criação (data_abertura) - mais recente primeiro
+          const chamadosOrdenados = data.sort((a: any, b: any) => {
+            if (a.data_abertura && b.data_abertura) {
+              return new Date(b.data_abertura).getTime() - new Date(a.data_abertura).getTime();
+            }
+            // Se não há data, usar ID como fallback (assumindo IDs sequenciais)
+            return (b.id || 0) - (a.id || 0);
+          });
+          setChamado(chamadosOrdenados[0]);
         } else {
+          console.log('[EmergencySocorrista] Nenhum chamado encontrado na API');
           setChamado(null);
         }
-      } catch {
+      } catch (error) {
+        console.error('[EmergencySocorrista] Erro ao buscar chamado da API:', error);
         setChamado(null);
       } finally {
         setLoading(false);
@@ -80,127 +219,357 @@ const EmergencySocorrista: React.FC = () => {
     fetchChamado();
   }, []);
 
+  // Realtime subscription para escutar mudanças no chamado
+  useEffect(() => {
+    const chamadoId = localStorage.getItem('chamadoId');
+    if (!chamadoId) return;
+
+    const channel = supabase
+      .channel('public:chamado')
+      .on('postgres_changes', 
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'chamado',
+          filter: `id=eq.${chamadoId}`
+        }, 
+        (payload) => {
+          console.log('[REALTIME] Mudança detectada no chamado:', payload);
+          if (payload.new && payload.new.posicao_inicial_socorrista) {
+            console.log('[REALTIME] Nova posição do socorrista:', payload.new.posicao_inicial_socorrista);
+            
+            // Atualiza o estado do chamado
+            setChamado(prev => prev ? {
+              ...prev,
+              posicao_inicial_socorrista: payload.new.posicao_inicial_socorrista,
+              status: payload.new.status || prev.status
+            } : null);
+
+            // Atualiza a posição do socorrista no mapa
+            const [lat, lng] = payload.new.posicao_inicial_socorrista.split(',').map(Number);
+            setSocorristaPos({ lat, lng });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Função para buscar rota real via OSRM com rate limiting
+  const getRouteFromOSRM = useCallback(async (start: { lat: number; lng: number }, end: { lat: number; lng: number }) => {
+    // Evitar chamadas simultâneas
+    if (isOSRMCallInProgress.current) {
+      console.log('[OSRM SOCORRISTA] Chamada já em progresso, ignorando...');
+      return { coords: [], duration: null };
+    }
+    
+    const now = Date.now();
+    const timeSinceLastCall = now - lastOSRMCall.current;
+    
+    if (timeSinceLastCall < MIN_OSRM_INTERVAL) {
+      const waitTime = MIN_OSRM_INTERVAL - timeSinceLastCall;
+      console.log(`[OSRM SOCORRISTA] Rate limiting: aguardando ${Math.round(waitTime/1000)}s`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    
+    isOSRMCallInProgress.current = true;
+    lastOSRMCall.current = Date.now();
+    
+    try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
+      console.log('[OSRM SOCORRISTA] Fazendo requisição para API...');
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        if (response.status === 429) {
+          console.warn('[OSRM SOCORRISTA] Rate limit atingido, aguardando 60 segundos...');
+          await new Promise(resolve => setTimeout(resolve, 60000));
+          throw new Error('Rate limit - tente novamente mais tarde');
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      if (!data.routes || !data.routes[0]) {
+        console.warn('[OSRM SOCORRISTA] Nenhuma rota encontrada');
+        return { coords: [], duration: null };
+      }
+      
+      // OSRM retorna [lng, lat], convertemos para {lat, lng}
+      const result = {
+        coords: data.routes[0].geometry.coordinates.map(([lng, lat]: [number, number]) => ({ lat, lng })),
+        duration: data.routes[0].duration // em segundos
+      };
+      
+      console.log('[OSRM SOCORRISTA] Rota calculada com sucesso');
+      return result;
+    } catch (error) {
+      console.error('[OSRM SOCORRISTA] Erro ao buscar rota:', error);
+      return { coords: [], duration: null };
+    } finally {
+      isOSRMCallInProgress.current = false;
+    }
+  }, [MIN_OSRM_INTERVAL]);
+
+  // Função para atualizar posição no banco de dados
+  const atualizarPosicaoNoBanco = useCallback(async (lat: number, lng: number) => {
+    const now = Date.now();
+    const timeSinceLastUpdate = now - lastDBUpdate.current;
+    
+    // Rate limiting para atualizações do banco
+    if (timeSinceLastUpdate < MIN_DB_UPDATE_INTERVAL) {
+      console.log(`[GEOLOCATION] Rate limiting DB: aguardando ${Math.round((MIN_DB_UPDATE_INTERVAL - timeSinceLastUpdate)/1000)}s`);
+      return;
+    }
+    
+    const url = process.env.REACT_APP_SUPABASE_URL;
+    const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+    const accessToken = localStorage.getItem('accessToken');
+    
+    if (!chamado || !url || !serviceKey || !accessToken) {
+      console.log('[GEOLOCATION] Dados insuficientes para atualizar banco');
+      return;
+    }
+    
+    lastDBUpdate.current = now;
+    
+    try {
+      const timestamp = new Date().toLocaleTimeString();
+      console.log(`[GEOLOCATION] ${timestamp} - Atualizando posição no banco: ${lat},${lng}`);
+      
+      const response = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
+        method: 'PATCH',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({
+          posicao_inicial_socorrista: `${lat},${lng}`
+        })
+      });
+      
+      if (response.ok) {
+        console.log(`[GEOLOCATION] ${timestamp} - ✅ Posição atualizada com sucesso`);
+        
+        // Atualiza o estado local do chamado
+        setChamado(prev => prev ? {
+          ...prev,
+          posicao_inicial_socorrista: `${lat},${lng}`
+        } : null);
+      } else {
+        console.error(`[GEOLOCATION] ${timestamp} - ❌ Erro HTTP ${response.status}`);
+      }
+    } catch (error) {
+      console.error('[GEOLOCATION] Erro ao atualizar posição:', error);
+    }
+  }, [chamado, MIN_DB_UPDATE_INTERVAL]);
+
+  // Função para iniciar tracking de geolocalização real
+  const iniciarTrackingReal = useCallback(() => {
+    if (!navigator.geolocation) {
+      setGeoError('Geolocalização não suportada neste dispositivo');
+      return;
+    }
+    
+    setGeoError(null);
+    setTrackingAtivo(true);
+    
+    const options = {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 5000 // Cache de 5 segundos
+    };
+    
+    const id = navigator.geolocation.watchPosition(
+      (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+        
+        console.log(`[GEOLOCATION] Nova posição: ${latitude}, ${longitude} (precisão: ${accuracy}m)`);
+        
+        // Atualiza posição local imediatamente
+        setSocorristaPos({ lat: latitude, lng: longitude });
+        
+        // Atualiza banco com rate limiting
+        atualizarPosicaoNoBanco(latitude, longitude);
+      },
+      (error) => {
+        console.error('[GEOLOCATION] Erro:', error);
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            setGeoError('Permissão de localização negada');
+            break;
+          case error.POSITION_UNAVAILABLE:
+            setGeoError('Localização indisponível');
+            break;
+          case error.TIMEOUT:
+            setGeoError('Timeout na obtenção da localização');
+            break;
+          default:
+            setGeoError('Erro desconhecido na geolocalização');
+            break;
+        }
+        setTrackingAtivo(false);
+      },
+      options
+    );
+    
+    setWatchId(id);
+    console.log('[GEOLOCATION] Tracking iniciado com watchId:', id);
+  }, [atualizarPosicaoNoBanco]);
+
+  // Função para parar tracking de geolocalização
+  const pararTrackingReal = useCallback(() => {
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      setWatchId(null);
+      console.log('[GEOLOCATION] Tracking parado');
+    }
+    setTrackingAtivo(false);
+  }, [watchId]);
+
+  // Iniciar tracking automaticamente quando há chamado
+  useEffect(() => {
+    if (chamado && !trackingAtivo && !simulacaoAtiva) {
+      console.log('[GEOLOCATION] Iniciando tracking automático para chamado:', chamado.id);
+      iniciarTrackingReal();
+    }
+    
+    return () => {
+      if (trackingAtivo) {
+        pararTrackingReal();
+      }
+    };
+  }, [chamado, trackingAtivo, simulacaoAtiva, iniciarTrackingReal, pararTrackingReal]);
+
   useEffect(() => {
     if (chamado && chamado.localizacao) {
       const [lat, lon] = chamado.localizacao.split(',').map(Number);
-      getAddressFromCoords(lat, lon).then(setEndereco);
+      
+      // Usar endereço do banco de dados em vez de API externa
+      if (chamado.endereco_textual) {
+        setEndereco(chamado.endereco_textual);
+      } else {
+        setEndereco('Endereço não disponível');
+      }
+      
+      // Determinar posição inicial do socorrista
+      let socorristaInicial = socorristaCoords;
+      if (chamado.posicao_inicial_socorrista) {
+        const [socLat, socLng] = chamado.posicao_inicial_socorrista.split(',').map(Number);
+        socorristaInicial = { lat: socLat, lng: socLng };
+        setSocorristaPos(socorristaInicial); // Atualiza a posição atual
+      }
+      
       // Buscar rota real
       setLoadingRoute(true);
-      getRouteFromOSRM(socorristaCoords, { lat, lng: lon })
+      getRouteFromOSRM(socorristaInicial, { lat, lng: lon })
         .then((result) => {
           if (result && result.coords && result.duration) {
             setRouteCoords(result.coords);
+            setCurrentRouteCoords(result.coords); // Inicializa também a rota dinâmica
             setRouteDuration(result.duration); // duração em segundos
           } else {
             setRouteCoords([]);
+            setCurrentRouteCoords([]);
             setRouteDuration(null);
           }
         })
         .catch(() => {
           setRouteCoords([]);
+          setCurrentRouteCoords([]);
           setRouteDuration(null);
         })
         .finally(() => setLoadingRoute(false));
     }
-  }, [chamado]);
+  }, [chamado, getRouteFromOSRM]);
 
+  // Recalcula rota sempre que a posição do socorrista muda - SEMPRE recalcula com proteção inteligente
   useEffect(() => {
-    if (routeCoords.length > 1 && routeDuration) {
-      let idx = 0;
-      setSocorristaPos(routeCoords[0]);
-      // Deixe a movimentação mais rápida: metade do tempo atual
-      const intervalMs = ((routeDuration * 1000) / routeCoords.length) / 2;
-      const url = process.env.REACT_APP_SUPABASE_URL;
-      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-      const accessToken = localStorage.getItem('accessToken');
-      const interval = setInterval(async () => {
-        idx++;
-        if (idx < routeCoords.length) {
-          setSocorristaPos(routeCoords[idx]);
-          // PATCH a cada movimento
-          if (chamado && url && serviceKey && accessToken) {
-            try {
-              await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
-                method: 'PATCH',
-                headers: {
-                  'apikey': serviceKey,
-                  'Authorization': `Bearer ${accessToken}`,
-                  'Content-Type': 'application/json',
-                  'Prefer': 'return=minimal'
-                },
-                body: JSON.stringify({
-                  posicao_inicial_socorrista: `${routeCoords[idx].lat},${routeCoords[idx].lng}`
-                })
-              });
-            } catch (error) {
-              console.error('Erro ao atualizar posição:', error);
+    if (chamado && chamado.localizacao && socorristaPos) {
+      const [lat, lon] = chamado.localizacao.split(',').map(Number);
+      const destino = { lat, lng: lon };
+      
+      // Verifica se a posição mudou comparando com a última posição conhecida
+      const currentPosition = `${socorristaPos.lat.toFixed(6)},${socorristaPos.lng.toFixed(6)}`;
+      const lastPosition = lastSocorristaPos.current 
+        ? `${lastSocorristaPos.current.lat.toFixed(6)},${lastSocorristaPos.current.lng.toFixed(6)}`
+        : null;
+      
+      if (currentPosition !== lastPosition) {
+        // Atualiza a referência da última posição
+        lastSocorristaPos.current = { ...socorristaPos };
+        console.log(`[ROUTE SOCORRISTA] Posição mudou, recalculando rota...`);
+        
+        // ATUALIZAÇÃO IMEDIATA: Remove parte da rota já percorrida
+        if (currentRouteCoords.length > 1) {
+          // Encontra o ponto mais próximo na rota atual
+          let closestIndex = 0;
+          let minDistance = Infinity;
+          
+          for (let i = 0; i < currentRouteCoords.length; i++) {
+            const distance = Math.hypot(
+              currentRouteCoords[i].lat - socorristaPos.lat,
+              currentRouteCoords[i].lng - socorristaPos.lng
+            );
+            if (distance < minDistance) {
+              minDistance = distance;
+              closestIndex = i;
             }
           }
-        } else {
-          clearInterval(interval);
+          
+          // Remove a parte da rota já percorrida (do início até o ponto atual)
+          const remainingRoute = currentRouteCoords.slice(closestIndex);
+          if (remainingRoute.length > 1) {
+            setCurrentRouteCoords(remainingRoute);
+            console.log(`[ROUTE SOCORRISTA] Rota trimada imediatamente - removidos ${closestIndex} pontos`);
+          }
         }
-      }, intervalMs);
-      return () => clearInterval(interval);
+        
+        // Debounce de 8 segundos para equilibrar responsividade e rate limiting
+        const timer = setTimeout(() => {
+          // Só verifica se não há chamada em progresso
+          if (!isOSRMCallInProgress.current) {
+            getRouteFromOSRM(socorristaPos, destino)
+              .then((result) => {
+                if (result && result.coords && result.coords.length > 1) {
+                  setCurrentRouteCoords(result.coords);
+                  console.log('[ROUTE SOCORRISTA] Rota atualizada com sucesso');
+                } else {
+                  console.log('[ROUTE SOCORRISTA] Nenhuma rota encontrada');
+                }
+              })
+              .catch(() => {
+                console.log('[ROUTE SOCORRISTA] Erro ao atualizar rota');
+              });
+          } else {
+            console.log('[ROUTE SOCORRISTA] Chamada OSRM em progresso, tentando novamente em 5s...');
+            // Se há chamada em progresso, tenta novamente em 5 segundos
+            setTimeout(() => {
+              if (!isOSRMCallInProgress.current) {
+                getRouteFromOSRM(socorristaPos, destino)
+                  .then((result) => {
+                    if (result && result.coords && result.coords.length > 1) {
+                      setCurrentRouteCoords(result.coords);
+                      console.log('[ROUTE SOCORRISTA] Rota atualizada com sucesso (retry)');
+                    }
+                  })
+                  .catch(() => {
+                    console.log('[ROUTE SOCORRISTA] Erro ao atualizar rota (retry)');
+                  });
+              }
+            }, 5000);
+          }
+        }, 8000); // Debounce de 8 segundos
+        
+        return () => clearTimeout(timer);
+      }
     }
-  }, [routeCoords, routeDuration, chamado]);
-
-  // Atualiza a posição do socorrista em tempo real na tabela chamado
-  useEffect(() => {
-    let watchId: number;
-
-    const updateSocorristaPosition = async (position: GeolocationPosition) => {
-      const { latitude, longitude } = position.coords;
-      const newPosition = { lat: latitude, lng: longitude };
-      // Prende ao ponto mais próximo da rota
-      let closest = newPosition;
-      if (routeCoords.length > 0) {
-        closest = getClosestRoutePoint(newPosition, routeCoords);
-      }
-      setSocorristaPos(closest);
-
-      // Atualizar posição no banco de dados
-      if (chamado) {
-        try {
-          const url = process.env.REACT_APP_SUPABASE_URL;
-          const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-          const accessToken = localStorage.getItem('accessToken');
-          if (!url || !serviceKey || !accessToken) return;
-          await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
-            method: 'PATCH',
-            headers: {
-              'apikey': serviceKey,
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'return=minimal'
-            },
-            body: JSON.stringify({
-              posicao_inicial_socorrista: `${latitude},${longitude}`
-            })
-          });
-        } catch (error) {
-          console.error('Erro ao atualizar posição:', error);
-        }
-      }
-    };
-
-    if ("geolocation" in navigator) {
-      watchId = navigator.geolocation.watchPosition(
-        updateSocorristaPosition,
-        (error) => console.error('Erro ao obter localização:', error),
-        {
-          enableHighAccuracy: true,
-          maximumAge: 0,
-          timeout: 5000
-        }
-      );
-    }
-
-    return () => {
-      if (watchId) {
-        navigator.geolocation.clearWatch(watchId);
-      }
-    };
-  }, [chamado]);
+  }, [socorristaPos, chamado, getRouteFromOSRM]); // Removido currentRouteCoords para evitar loop
 
   useEffect(() => {
     if (routeCoords.length > 1) {
@@ -252,19 +621,6 @@ const EmergencySocorrista: React.FC = () => {
     }, 1000);
   };
 
-  // Função para buscar rota real via OSRM
-  async function getRouteFromOSRM(start: { lat: number; lng: number }, end: { lat: number; lng: number }) {
-    const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
-    const response = await fetch(url);
-    const data = await response.json();
-    if (!data.routes || !data.routes[0]) return { coords: [], duration: null };
-    // OSRM retorna [lng, lat], convertemos para {lat, lng}
-    return {
-      coords: data.routes[0].geometry.coordinates.map(([lng, lat]: [number, number]) => ({ lat, lng })),
-      duration: data.routes[0].duration // em segundos
-    };
-  }
-
   // Função utilitária para encontrar o ponto mais próximo da rota
   function getClosestRoutePoint(
     current: { lat: number; lng: number },
@@ -281,6 +637,151 @@ const EmergencySocorrista: React.FC = () => {
     }
     return closest;
   }
+
+  // Função para iniciar simulação de movimento - APENAS PARA TESTES
+  const iniciarSimulacao = () => {
+    if (!chamado || !chamado.posicao_inicial_socorrista || routeCoords.length < 2) {
+      console.log('Não é possível iniciar simulação: dados insuficientes');
+      return;
+    }
+
+    // Para o tracking real se estiver ativo
+    if (trackingAtivo) {
+      pararTrackingReal();
+      console.log('[SIMULAÇÃO] Tracking real parado para iniciar simulação');
+    }
+
+    // Para qualquer simulação em andamento
+    if (intervalSimulacao) {
+      clearInterval(intervalSimulacao);
+    }
+
+    // Encontra a posição atual do socorrista na rota
+    const [socorristaLat, socorristaLng] = chamado.posicao_inicial_socorrista.split(',').map(Number);
+    let startIndex = 0;
+    
+    // Encontra o ponto mais próximo na rota
+    let minDistance = Infinity;
+    for (let i = 0; i < routeCoords.length; i++) {
+      const distance = Math.hypot(
+        routeCoords[i].lat - socorristaLat,
+        routeCoords[i].lng - socorristaLng
+      );
+      if (distance < minDistance) {
+        minDistance = distance;
+        startIndex = i;
+      }
+    }
+
+    console.log(`Iniciando simulação do ponto ${startIndex} de ${routeCoords.length}`);
+    
+    let currentIndex = startIndex;
+    let dbUpdateCounter = 0; // Contador para controlar atualizações do banco
+    setSimulacaoAtiva(true);
+    
+    // Movimentação visual: 2 segundos (~80 km/h)
+    const visualIntervalMs = 2000;
+    // Atualização do banco: a cada 4 movimentos visuais (2s * 4 = 8s)
+    const dbUpdateInterval = 4;
+
+    console.log(`[SIMULAÇÃO MANUAL] Iniciando do ponto ${startIndex}/${routeCoords.length}, movimentação visual: ${visualIntervalMs}ms, banco: ${visualIntervalMs * dbUpdateInterval}ms`);
+
+    const interval = setInterval(async () => {
+      currentIndex++;
+      dbUpdateCounter++;
+      
+      if (currentIndex < routeCoords.length) {
+        const novaPosicao = routeCoords[currentIndex];
+        
+        // SEMPRE atualiza a posição visual (mais rápido)
+        setSocorristaPos(novaPosicao);
+        console.log(`[SIMULAÇÃO VISUAL] Ponto ${currentIndex}/${routeCoords.length} - Lat: ${novaPosicao.lat}, Lng: ${novaPosicao.lng}`);
+        
+        // SÓ atualiza o banco de dados a cada 4 movimentos visuais (mantém 8s)
+        const shouldUpdateDB = dbUpdateCounter >= dbUpdateInterval;
+        
+        if (shouldUpdateDB) {
+          dbUpdateCounter = 0; // Reset do contador
+          
+          const url = process.env.REACT_APP_SUPABASE_URL;
+          const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+          const accessToken = localStorage.getItem('accessToken');
+          
+          if (chamado && url && serviceKey && accessToken) {
+            try {
+              const timestamp = new Date().toLocaleTimeString();
+              console.log(`[PATCH MANUAL] ${timestamp} - Enviando coordenadas para banco: ${novaPosicao.lat},${novaPosicao.lng}`);
+              
+              const response = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
+                method: 'PATCH',
+                headers: {
+                  'apikey': serviceKey,
+                  'Authorization': `Bearer ${accessToken}`,
+                  'Content-Type': 'application/json',
+                  'Prefer': 'return=minimal'
+                },
+                body: JSON.stringify({
+                  posicao_inicial_socorrista: `${novaPosicao.lat},${novaPosicao.lng}`
+                })
+              });
+              
+              if (response.ok) {
+                console.log(`[PATCH MANUAL] ${timestamp} - ✅ Coordenadas atualizadas com sucesso no banco`);
+              } else {
+                console.error(`[PATCH MANUAL] ${timestamp} - ❌ Erro HTTP ${response.status}`);
+              }
+              
+              // Atualiza o estado local do chamado
+              setChamado(prev => prev ? {
+                ...prev,
+                posicao_inicial_socorrista: `${novaPosicao.lat},${novaPosicao.lng}`
+              } : null);
+              
+            } catch (error) {
+              const timestamp = new Date().toLocaleTimeString();
+              console.error(`[PATCH MANUAL] ${timestamp} - ❌ Erro ao atualizar posição na simulação:`, error);
+            }
+          }
+        }
+      } else {
+        // Chegou ao destino
+        console.log('[SIMULAÇÃO MANUAL] ✅ Chegou ao destino - parando simulação');
+        clearInterval(interval);
+        setSimulacaoAtiva(false);
+        setIntervalSimulacao(null);
+      }
+    }, visualIntervalMs);
+    
+    setIntervalSimulacao(interval);
+  };
+
+  // Função para parar simulação
+  const pararSimulacao = () => {
+    if (intervalSimulacao) {
+      clearInterval(intervalSimulacao);
+      setIntervalSimulacao(null);
+    }
+    setSimulacaoAtiva(false);
+    console.log('Simulação interrompida');
+    
+    // Reinicia o tracking real se há chamado
+    if (chamado && !trackingAtivo) {
+      console.log('[SIMULAÇÃO] Reiniciando tracking real após parar simulação');
+      iniciarTrackingReal();
+    }
+  };
+
+  // Cleanup quando componente desmonta
+  useEffect(() => {
+    return () => {
+      if (intervalSimulacao) {
+        clearInterval(intervalSimulacao);
+      }
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
+  }, [intervalSimulacao, watchId]);
 
   return (
     <Box sx={{
@@ -353,8 +854,27 @@ const EmergencySocorrista: React.FC = () => {
             zIndex: 0,
           }}
         />
-        <Typography variant="h6" sx={{ mb: 1, position: 'relative', zIndex: 1 }}>
-          Informações do Chamado{chamado ? ` (ID: ${chamado.id})` : ''}
+        <Typography variant="h6" sx={{ mb: 1, position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span>Informações do Chamado{chamado ? ` (ID: ${chamado.id})` : ''}</span>
+          {/* Botão de simulação - OCULTO mas disponível para testes */}
+          {chamado && chamado.posicao_inicial_socorrista && routeCoords.length > 1 && (
+            <IconButton
+              onClick={simulacaoAtiva ? pararSimulacao : iniciarSimulacao}
+              size="small"
+              sx={{ 
+                ml: 2, 
+                color: simulacaoAtiva ? 'error.main' : 'primary.main',
+                opacity: 0, // Invisível
+                pointerEvents: 'auto', // Mantém clicável
+                '&:hover': {
+                  opacity: 0.3, // Fica levemente visível no hover para facilitar encontrar
+                  backgroundColor: simulacaoAtiva ? 'error.light' : 'primary.light'
+                }
+              }}
+            >
+              {simulacaoAtiva ? <StopIcon fontSize="small" /> : <PlayArrowIcon fontSize="small" />}
+            </IconButton>
+          )}
         </Typography>
         {chamado ? (
           <>
@@ -376,7 +896,7 @@ const EmergencySocorrista: React.FC = () => {
               }
               return (
                 <Box sx={{ width: '100%', minHeight: 350, maxHeight: 500, position: 'relative', zIndex: 1 }}>
-                  <MapPatnerEme
+                  <MapPatner
                     center={{
                       lat: Number(chamado.localizacao.split(',')[0]),
                       lng: Number(chamado.localizacao.split(',')[1])
@@ -397,10 +917,10 @@ const EmergencySocorrista: React.FC = () => {
                       title: 'Sua localização'
                     }] : [])
                     ]}
-                    routeCoords={routeCoords.length > 1 && socorristaIdx >= 0
-                      ? routeCoords.slice(socorristaIdx)
-                      : routeCoords}
-                    ambulancePosition={socorristaPos}
+                    routeCoords={currentRouteCoords.length > 1 ? currentRouteCoords : routeCoords}
+                    ambulancePosition={socorristaLat !== null && socorristaLng !== null 
+                      ? { lat: socorristaLat, lng: socorristaLng }
+                      : undefined}
                   />
                   {loadingRoute && (
                     <Box sx={{ position: 'absolute', top: 10, right: 10, zIndex: 10 }}>
@@ -446,6 +966,7 @@ const EmergencySocorrista: React.FC = () => {
             <Typography variant="body2" sx={{ textAlign: 'left', color: 'text.secondary', mt: 1, position: 'relative', zIndex: 1 }}>
               {endereco || 'Endereço não disponível'}
             </Typography>
+
             {/* Botões de ação - visível apenas se não clicou em Cheguei */}
             {!chegou && (
               <Box sx={{ display: 'flex', flexDirection: 'row', gap: 2, mt: 2, width: '100%', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>

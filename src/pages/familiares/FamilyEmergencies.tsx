@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Typography, Paper, List, ListItem, ListItemText, CircularProgress, Container, Button } from '@mui/material';
+import { Box, Typography, Paper, List, ListItem, ListItemText, CircularProgress, Container, Button, IconButton, Badge } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../../Supabase/supabaseRealtimeClient';
+import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 
 // Função utilitária para formatar data/hora
 function formatarDataHora(data: string) {
@@ -14,13 +16,38 @@ function formatarDataHora(data: string) {
   return `${dia}/${mes}/${ano} ${hora}:${min}`;
 }
 
-const FamilyEmergencies: React.FC = () => {
+interface FamilyEmergenciesProps {
+  onNewChamado?: (hasNew: boolean) => void;
+}
+
+const FamilyEmergencies: React.FC<FamilyEmergenciesProps> = ({ onNewChamado }) => {
   const [chamados, setChamados] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedChamado, setSelectedChamado] = useState<any | null>(null);
+  const [hasNewChamado, setHasNewChamado] = useState(false);
   const navigate = useNavigate();
+  const prevChamadosIds = React.useRef<Set<string>>(new Set());
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    audioRef.current = new Audio('/assets/notification.mp3');
+    const unlockAudio = () => {
+      if (audioRef.current) {
+        audioRef.current.volume = 0;
+        audioRef.current.play().catch(() => {});
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        audioRef.current.volume = 1;
+      }
+      window.removeEventListener('click', unlockAudio);
+    };
+    window.addEventListener('click', unlockAudio);
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+    };
+  }, []);
 
   useEffect(() => {
     const fetchChamados = async () => {
@@ -33,7 +60,7 @@ const FamilyEmergencies: React.FC = () => {
         const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
         if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
         const accessToken = localStorage.getItem('accessToken');
-        const fetchUrl = `${url}/rest/v1/chamado?notificacao_familiares=cs.[{"id":"${familiarId}"}]`;
+        const fetchUrl = `${url}/rest/v1/chamado?notificacao_familiares=cs.[{"id":"${familiarId}"}]&status=neq.concluído`;
         const fetchOptions = {
           method: 'GET',
           headers: {
@@ -42,14 +69,28 @@ const FamilyEmergencies: React.FC = () => {
             'Content-Type': 'application/json',
           },
         };
-        console.log('Estrutura da chamada API:', { url: fetchUrl, options: fetchOptions });
         const response = await fetch(fetchUrl, fetchOptions);
         const data = await response.json();
-        console.log('Resultado do fetch chamados familiares:', data);
         if (!response.ok) {
           throw new Error(data.error_description || data.message || `Erro ${response.status}`);
         }
-        setChamados(data);
+        const chamadosOrdenados = data.sort((a: any, b: any) => {
+          const dataA = new Date(a.data_abertura);
+          const dataB = new Date(b.data_abertura);
+          return dataB.getTime() - dataA.getTime();
+        });
+        const currentIds = new Set<string>(chamadosOrdenados.map((chamado: any) => chamado.id));
+        const newChamados = chamadosOrdenados.filter((chamado: any) => !prevChamadosIds.current.has(chamado.id));
+        if (newChamados.length > 0) {
+          if (audioRef.current) {
+            audioRef.current.currentTime = 0;
+            audioRef.current.play().catch(() => {});
+          }
+          setHasNewChamado(true);
+          if (onNewChamado) onNewChamado(true);
+        }
+        prevChamadosIds.current = currentIds;
+        setChamados(chamadosOrdenados);
       } catch (e: any) {
         setErro(e.message || 'Erro ao buscar chamados.');
       } finally {
@@ -57,11 +98,22 @@ const FamilyEmergencies: React.FC = () => {
       }
     };
     fetchChamados();
-  }, []);
+    const channel = supabase
+      .channel('public:chamado-family-list')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chamado' }, (payload) => {
+        fetchChamados();
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [onNewChamado]);
 
   const handleVisualizar = (chamado: any) => {
     if (chamado && chamado.id) {
       localStorage.setItem('chamadoId', chamado.id);
+      setHasNewChamado(false);
+      if (onNewChamado) onNewChamado(false);
       navigate('/emergency-family');
     }
   };
@@ -69,6 +121,11 @@ const FamilyEmergencies: React.FC = () => {
   const handleCloseModal = () => {
     setModalOpen(false);
     setSelectedChamado(null);
+  };
+
+  const handleNotificationClick = () => {
+    setHasNewChamado(false);
+    if (onNewChamado) onNewChamado(false);
   };
 
   return (

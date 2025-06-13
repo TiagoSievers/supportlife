@@ -3,6 +3,8 @@ import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper
 import { supabase } from '../../Supabase/supabaseRealtimeClient';
 import ConfirmDeleteDialog from '../../components/ConfirmDeleteDialog';
 import AddUserAdminDialog from './AddUserAdminDialog';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 
 interface UsuarioAdmin {
   id?: number;
@@ -20,6 +22,8 @@ const AdminUserList: React.FC = () => {
   const [userToDelete, setUserToDelete] = useState<UsuarioAdmin | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editUsuario, setEditUsuario] = useState<UsuarioAdmin | null>(null);
+  const theme = useTheme();
+  const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
 
   useEffect(() => {
     // Função para buscar usuários administrativos via API
@@ -173,15 +177,15 @@ const AdminUserList: React.FC = () => {
 
   return (
     <TableContainer component={Paper}>
-      <Table sx={{ minWidth: 650 }} aria-label="tabela de usuários administrativos">
+      <Table aria-label="tabela de usuários administrativos">
         <TableHead>
           <TableRow>
             <TableCell>ID</TableCell>
             <TableCell>Nome</TableCell>
-            <TableCell>Email</TableCell>
-            <TableCell>Perfil</TableCell>
-            <TableCell>Último Login</TableCell>
-            <TableCell>Ações</TableCell>
+            {isDesktop && <TableCell>Email</TableCell>}
+            {isDesktop && <TableCell>Perfil</TableCell>}
+            {isDesktop && <TableCell>Último Login</TableCell>}
+            <TableCell sx={{ minWidth: 100, whiteSpace: 'nowrap' }}>Ações</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -190,10 +194,10 @@ const AdminUserList: React.FC = () => {
               <TableRow key={usuario.id}>
                 <TableCell>{usuario.id}</TableCell>
                 <TableCell>{usuario.nome}</TableCell>
-                <TableCell>{usuario.email}</TableCell>
-                <TableCell>{usuario.perfil || '-'}</TableCell>
-                <TableCell>{usuario.last_sign_in_at ? new Date(usuario.last_sign_in_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</TableCell>
-                <TableCell>
+                {isDesktop && <TableCell>{usuario.email}</TableCell>}
+                {isDesktop && <TableCell>{usuario.perfil || '-'}</TableCell>}
+                {isDesktop && <TableCell>{usuario.last_sign_in_at ? new Date(usuario.last_sign_in_at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '-'}</TableCell>}
+                <TableCell sx={{ minWidth: 100, whiteSpace: 'nowrap' }}>
                   <Button size="small" color="primary" onClick={() => handleEdit(usuario)}>Editar</Button>
                   <Button size="small" color="error" onClick={() => handleOpenDeleteDialog(usuario)}>Excluir</Button>
                 </TableCell>
@@ -201,7 +205,7 @@ const AdminUserList: React.FC = () => {
             ))
           ) : (
             <TableRow>
-              <TableCell colSpan={5} align="center">
+              <TableCell colSpan={isDesktop ? 6 : 3} align="center" sx={{ minWidth: 100, whiteSpace: 'nowrap' }}>
                 Nenhum usuário administrativo encontrado
               </TableCell>
             </TableRow>

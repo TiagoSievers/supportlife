@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Outlet } from 'react-router-dom';
 import { ThemeProvider, CssBaseline, Box } from '@mui/material';
 import theme from './theme';
@@ -20,9 +20,14 @@ import { useNavigate } from 'react-router-dom';
 import ChamadosClient from './cliente/chamadosClient';
 import CustomMapWithAmbulanceIcon from './pages/emer_socorrista/CustomMapWithAmbulanceIcon';
 
-const ProtectedLayout: React.FC = () => (
+interface ProtectedLayoutProps {
+  hasNewChamado: boolean;
+  onNotificationClick: () => void;
+}
+
+const ProtectedLayout: React.FC<ProtectedLayoutProps> = ({ hasNewChamado, onNotificationClick }) => (
   <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-    <Navbar />
+    <Navbar hasNewChamado={hasNewChamado} onNotificationClick={onNotificationClick} />
     <Box
       component="main"
       sx={{
@@ -38,6 +43,7 @@ const ProtectedLayout: React.FC = () => (
 );
 
 const App: React.FC = () => {
+  const [hasNewChamado, setHasNewChamado] = useState(false);
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -49,15 +55,20 @@ const App: React.FC = () => {
 
           {/* Rotas protegidas */}
           <Route element={<ProtectedRoute />}> 
-            <Route element={<ProtectedLayout />}> 
+            <Route element={
+              <ProtectedLayout 
+                hasNewChamado={hasNewChamado} 
+                onNotificationClick={() => setHasNewChamado(false)} 
+              />
+            }> 
               <Route path="/family" element={<Family />} />
               <Route path="/admin" element={<Admin />} />
               <Route path="/emergency" element={<Emergency />} />
               <Route path="/emergencia-socorrista" element={<EmergencySocorrista />} />
               <Route path="/admin-panel" element={<AdminPanel />} />
               <Route path="/home" element={<Home />} />
-              <Route path="/partner-emergencies" element={<PartnerEmergencies />} />
-              <Route path="/family-emergencies" element={<FamilyEmergencies />} />
+              <Route path="/partner-emergencies" element={<PartnerEmergencies hasNewChamado={hasNewChamado} onNewChamado={setHasNewChamado} />} />
+              <Route path="/family-emergencies" element={<FamilyEmergencies onNewChamado={setHasNewChamado} />} />
               <Route path="/emergency-family" element={<EmergencyFamily />} />
               <Route path="/family-emergency-location" element={<FamilyEmergencyLocation />} />
               <Route path="/chamado-cliente" element={<ChamadosClient />} />

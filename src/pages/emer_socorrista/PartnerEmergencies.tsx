@@ -1,11 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Container, Typography, Box, Paper } from '@mui/material';
 import ChamadoSocorristaList from './chamadoSocorristaList';
-import Navbar from '../../components/Navbar';
+// import Navbar from '../../components/Navbar';
 
-const PartnerEmergencies: React.FC = () => {
+interface PartnerEmergenciesProps {
+  hasNewChamado: boolean;
+  onNewChamado: (hasNew: boolean) => void;
+}
+
+const PartnerEmergencies: React.FC<PartnerEmergenciesProps> = ({ hasNewChamado, onNewChamado }) => {
   const [aceitos, setAceitos] = useState(0);
-  const [hasNewChamado, setHasNewChamado] = useState(false);
 
   useEffect(() => {
     const fetchAceitos = async () => {
@@ -33,9 +37,21 @@ const PartnerEmergencies: React.FC = () => {
     fetchAceitos();
   }, []);
 
+  // Função para lidar com novos chamados
+  const handleNewChamado = () => {
+    console.log('[PARTNER EMERGENCIES] Novo chamado detectado - ativando notificação');
+    onNewChamado(true);
+  };
+
+  // Função para resetar a notificação (pode ser chamada quando o usuário visualiza)
+  const handleResetNotification = () => {
+    console.log('[PARTNER EMERGENCIES] Resetando notificação');
+    onNewChamado(false);
+  };
+
   return (
     <>
-      <Navbar hasNewChamado={hasNewChamado} />
+      {/* Navbar removido, pois será controlado pelo App */}
       <Container
         maxWidth="lg"
         sx={{
@@ -74,7 +90,7 @@ const PartnerEmergencies: React.FC = () => {
             <Typography variant="h6">Chamados aceitos pelo socorrista</Typography>
             <Typography variant="h3" color="primary">{aceitos}</Typography>
           </Paper>
-          <ChamadoSocorristaList onNewChamado={() => setHasNewChamado(true)} />
+          <ChamadoSocorristaList onNewChamado={handleNewChamado} />
         </Box>
       </Container>
     </>

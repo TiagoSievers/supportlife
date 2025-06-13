@@ -5,7 +5,6 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import ambulanceIcon from '../../assets/ambulance-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
-import rescuerIcon from '../../assets/user-3296 (2).png';
 
 interface MapMarker {
   position: {
@@ -28,7 +27,6 @@ interface MapPatnerProps {
   showUserLocation?: boolean;
   children?: React.ReactNode;
   ambulancePosition?: { lat: number; lng: number };
-  rescuerPosition?: { lat: number; lng: number };
 }
 
 const ambulanceLeafletIcon = L.icon({
@@ -41,18 +39,17 @@ const ambulanceLeafletIcon = L.icon({
   popupAnchor:  [0, -38]
 });
 
-const rescuerLeafletIcon = L.icon({
-  iconUrl: rescuerIcon,
-  shadowUrl: markerShadow,
-  iconSize:     [38, 38],
-  shadowSize:   [41, 41],
-  iconAnchor:   [19, 38],
-  shadowAnchor: [12, 41],
-  popupAnchor:  [0, -38]
+// Ícone padrão do Leaflet para garantir que apareça corretamente
+const defaultLeafletIcon = L.icon({
+  iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
 });
 
 const center = { lat: -23.55052, lng: -46.633308 };
-const rescuerPosition = { lat: -23.552, lng: -46.634 };
 
 const MapPatnerNavigation: React.FC<MapPatnerProps> = (props) => {
   return <MapPatnerMap {...props} />;
@@ -64,33 +61,14 @@ const MapPatnerMap: React.FC<MapPatnerProps> = ({
   markers = [],
   routeCoords = [],
   children,
-  ambulancePosition,
-  rescuerPosition
+  ambulancePosition
 }) => {
-  React.useEffect(() => {
-    if (ambulancePosition) {
-      console.log('Socorrista mudou de posição:', ambulancePosition);
-    }
-  }, [ambulancePosition]);
+
 
   if (!center) return null;
 
-  // Calcular o índice do ponto mais próximo do socorrista na rota
-  let routeToShow = routeCoords;
-  if (ambulancePosition && routeCoords.length > 1) {
-    let minDist = Infinity;
-    let idx = 0;
-    for (let i = 0; i < routeCoords.length; i++) {
-      const p = routeCoords[i];
-      const dist = Math.hypot(ambulancePosition.lat - p.lat, ambulancePosition.lng - p.lng);
-      if (dist < minDist) {
-        minDist = dist;
-        idx = i;
-      }
-    }
-    // Só mostra o trecho ainda não percorrido
-    routeToShow = routeCoords.slice(idx);
-  }
+  // Usar a rota fornecida sem modificações (será calculada dinamicamente no componente pai)
+  const routeToShow = routeCoords;
 
   return (
     <Box sx={{ width: '100%', position: 'relative' }}>
@@ -117,20 +95,19 @@ const MapPatnerMap: React.FC<MapPatnerProps> = ({
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          {routeToShow && routeToShow.length > 1 && (
+          {routeToShow && routeToShow.length >= 2 && (
             <Polyline
               positions={routeToShow.map(coord => [coord.lat, coord.lng])}
               pathOptions={{ color: 'blue', weight: 4 }}
             />
           )}
           {children}
-          <FitBounds markers={markers} />
           <Marker position={ambulancePosition || center} icon={ambulanceLeafletIcon}>
             <Popup>
               Marcador de ambulância personalizado!
             </Popup>
           </Marker>
-          <Marker position={center}>
+          <Marker position={center} icon={defaultLeafletIcon}>
             <Popup>
               Local do chamado (paciente)
             </Popup>

@@ -4,6 +4,8 @@ import { SocorristaParams } from '../../socorristas/api';
 import AddPartnerDialog from './AddPartnerDialog';
 import ConfirmDeleteDialog from '../../components/ConfirmDeleteDialog';
 import { supabase } from '../../Supabase/supabaseRealtimeClient';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 
 // Interface alinhada com a tabela socorrista
 interface Socorrista {
@@ -25,6 +27,8 @@ const PartnerList: React.FC = () => {
   const [editSocorrista, setEditSocorrista] = useState<SocorristaParams | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [socorristaToDelete, setSocorristaToDelete] = useState<SocorristaParams | null>(null);
+  const theme = useTheme();
+  const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
 
   // =============================
   // ÍNDICE DO ARQUIVO
@@ -174,16 +178,16 @@ const PartnerList: React.FC = () => {
 
   return (
     <TableContainer component={Paper}>
-      <Table sx={{ minWidth: 650 }} aria-label="tabela de socorristas">
+      <Table aria-label="tabela de socorristas">
         <TableHead>
           <TableRow>
             <TableCell>ID</TableCell>
             <TableCell>Nome</TableCell>
-            <TableCell>Email</TableCell>
-            <TableCell>Telefone</TableCell>
-            <TableCell>Status</TableCell>
-            <TableCell>Empresa</TableCell>
-            <TableCell>Ações</TableCell>
+            {isDesktop && <TableCell>Email</TableCell>}
+            {isDesktop && <TableCell>Telefone</TableCell>}
+            {isDesktop && <TableCell>Status</TableCell>}
+            {isDesktop && <TableCell>Empresa</TableCell>}
+            <TableCell sx={{ minWidth: 100, whiteSpace: 'nowrap' }}>Ações</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -192,11 +196,11 @@ const PartnerList: React.FC = () => {
               <TableRow key={socorrista.id}>
                 <TableCell>{socorrista.id}</TableCell>
                 <TableCell>{socorrista.nome}</TableCell>
-                <TableCell>{socorrista.email}</TableCell>
-                <TableCell>{socorrista.telefone}</TableCell>
-                <TableCell>{socorrista.status}</TableCell>
-                <TableCell>{socorrista.nome_empresa}</TableCell>
-                <TableCell>
+                {isDesktop && <TableCell>{socorrista.email}</TableCell>}
+                {isDesktop && <TableCell>{socorrista.telefone}</TableCell>}
+                {isDesktop && <TableCell>{socorrista.status}</TableCell>}
+                {isDesktop && <TableCell>{socorrista.nome_empresa}</TableCell>}
+                <TableCell sx={{ minWidth: 100, whiteSpace: 'nowrap' }}>
                   <Button size="small" color="primary" onClick={() => handleEdit(socorrista)}>Editar</Button>
                   <Button size="small" color="error" onClick={() => handleOpenDeleteDialog(socorrista)}>Excluir</Button>
                 </TableCell>
@@ -204,7 +208,7 @@ const PartnerList: React.FC = () => {
             ))
           ) : (
             <TableRow>
-              <TableCell colSpan={7} align="center">
+              <TableCell colSpan={isDesktop ? 7 : 3} align="center" sx={{ minWidth: 100, whiteSpace: 'nowrap' }}>
                 Nenhum socorrista encontrado
               </TableCell>
             </TableRow>

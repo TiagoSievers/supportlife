@@ -1,8 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, CircularProgress, Button, Tabs, Tab } from '@mui/material';
+import { Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, CircularProgress, Button, Tabs, Tab, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
 import PhoneInTalkIcon from '@mui/icons-material/PhoneInTalk';
 import { supabase } from '../../Supabase/supabaseRealtimeClient';
 import CallModal from './CallModal';
+import { useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 
 // Interface para o status
 interface TabPanelProps {
@@ -48,6 +50,8 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
   const [tabValue, setTabValue] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastMaxIdRef = useRef<number>(0);
+  const theme = useTheme();
+  const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
 
   // Função para filtrar chamados por status
   const getFilteredChamados = () => {
@@ -60,7 +64,9 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
         return chamados.filter(c => c.status === 'Aceito / Em andamento' || c.status === 'A caminho');
       case 3: // Finalizados
         return chamados.filter(c => c.status === 'finalizado');
-      case 4: // Todos
+      case 4: // Concluídos
+        return chamados.filter(c => c.status === 'concluído');
+      case 5: // Todos
         return chamados;
       default:
         return chamados.filter(c => c.status === 'Pendente');
@@ -152,6 +158,7 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
     // Buscar o chamado completo
     const chamado = chamados.find((c) => c.id === chamadoId);
     let nome = '';
+    let telefone = '';
     if (chamado && chamado.cliente_id) {
       // Buscar nome do cliente
       try {
@@ -166,6 +173,11 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
           }
         });
         const clienteData = await clienteResp.json();
+        // Log completo das informações do cliente
+        if (clienteData && clienteData[0]) {
+          console.log('[CLIENTE COMPLETO]', clienteData[0]);
+          telefone = clienteData[0].telefone || '';
+        }
         if (clienteData && clienteData[0] && clienteData[0].nome) {
           nome = clienteData[0].nome;
         }
@@ -173,9 +185,37 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
         // Se der erro, ignora e segue sem nome
       }
     }
+    // Log das informações do cliente
+    if (chamado) {
+      console.log('[VISUALIZAR CHAMADO] Cliente:', {
+        chamado_id: chamado.id,
+        cliente_id: chamado.cliente_id,
+        nome: nome,
+        telefone: telefone,
+        status: chamado.status,
+        endereco: chamado.endereco_textual || '',
+      });
+    }
+    // Chamada API curl fixa
+    const clienteId = chamado && chamado.cliente_id ? chamado.cliente_id : 12;
+    const endpoint = `https://usqozshucjsgmfgaoiad.supabase.co/rest/v1/chamado?select=*&cliente_id=eq.${clienteId}&order=data_abertura.desc`;
+    const headers = {
+      'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzcW96c2h1Y2pzZ21mZ2FvaWFkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY3OTI4OTUsImV4cCI6MjA2MjM2ODg5NX0.DMNalkURt6sp2g21URpXfcY4ts53cLxbMR_spk-TgvQ',
+      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsImtpZCI6IlNPZzBsRGZCMm95VHhnWjIiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL3VzcW96c2h1Y2pzZ21mZ2FvaWFkLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJjNDkxYzBjNC1lNGI2LTQxMGMtODVkNC1jMjUwMTc0ZjA0MGIiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzQ5Njc4MDE5LCJpYXQiOjE3NDkwNzMyMTksImVtYWlsIjoib3Jvc2lvMTExNEB1b3Jhay5jb20iLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsX3ZlcmlmaWVkIjp0cnVlfSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc0OTA3MzIxOX1dLCJzZXNzaW9uX2lkIjoiYzJlYjFjNjctMTgyZi00MDgxLTgzZGYtODIxNjJlMzVhNDg3IiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.UooyxmTZztdzRDsg4QrCR5DzrusFtX543RpZxP4Heok',
+      'Content-Type': 'application/json'
+    };
+    console.log('[API CHAMADO] Fazendo fetch:', endpoint, headers);
+    try {
+      const response = await fetch(endpoint, { headers });
+      const data = await response.json();
+      console.log('[API CHAMADO] Resultado:', data);
+    } catch (err) {
+      console.error('[API CHAMADO] Erro:', err);
+    }
     setPopupChamado({
       id: chamadoId,
       nome,
+      telefone,
       endereco: chamado && chamado.endereco_textual ? chamado.endereco_textual : '',
     });
     setPopupChamadoId(chamadoId);
@@ -224,31 +264,56 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
       <Typography variant="h6" sx={{ mb: 2 }}>Lista de chamados</Typography>
       
       {/* Tabs de Status - Reordenadas com Pendentes primeiro */}
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-        <Tabs value={tabValue} onChange={handleTabChange} aria-label="status tabs">
-          <Tab label="Pendentes" />
-          <Tab label="Em análise" />
-          <Tab label="Em andamento" />
-          <Tab label="Finalizados" />
-          <Tab label="Todos" />
-        </Tabs>
-      </Box>
+      {isDesktop ? (
+        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+          <Tabs value={tabValue} onChange={handleTabChange} aria-label="status tabs">
+            <Tab label="Pendentes" />
+            <Tab label="Em análise" />
+            <Tab label="Em andamento" />
+            <Tab label="Finalizados" />
+            <Tab label="Concluídos" />
+            <Tab label="Todos" />
+          </Tabs>
+        </Box>
+      ) : (
+        <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+          <InputLabel id="status-select-label">Status</InputLabel>
+          <Select
+            labelId="status-select-label"
+            id="status-select"
+            value={tabValue}
+            label="Status"
+            onChange={e => setTabValue(Number(e.target.value))}
+          >
+            <MenuItem value={0}>Pendentes</MenuItem>
+            <MenuItem value={1}>Em análise</MenuItem>
+            <MenuItem value={2}>Em andamento</MenuItem>
+            <MenuItem value={3}>Finalizados</MenuItem>
+            <MenuItem value={4}>Concluídos</MenuItem>
+            <MenuItem value={5}>Todos</MenuItem>
+          </Select>
+        </FormControl>
+      )}
 
       {loading ? (
         <CircularProgress />
       ) : error ? (
         <Typography color="error">{error}</Typography>
       ) : (
-        <TableContainer component={Paper} sx={{ mt: 2 }}>
+        <TableContainer component={Paper} sx={{ mt: 2, overflowX: 'auto', maxWidth: '100vw' }}>
           <Table>
             <TableHead>
               <TableRow>
                 <TableCell>ID</TableCell>
                 <TableCell>Cliente ID</TableCell>
                 <TableCell>Status</TableCell>
-                <TableCell>Localização</TableCell>
-                <TableCell>Data Abertura</TableCell>
-                <TableCell>Ações</TableCell>
+                {isDesktop ? (
+                  <TableCell>Localização</TableCell>
+                ) : (
+                  <TableCell>Ação</TableCell>
+                )}
+                {isDesktop && <TableCell>Data Abertura</TableCell>}
+                {isDesktop && <TableCell>Ações</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -257,20 +322,37 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
                   <TableCell>{chamado.id}</TableCell>
                   <TableCell>{chamado.cliente_id}</TableCell>
                   <TableCell>{chamado.status}</TableCell>
-                  <TableCell>{chamado.endereco_textual || 'Endereço não disponível'}</TableCell>
-                  <TableCell>{formatarDataHora(chamado.data_abertura)}</TableCell>
-                  <TableCell>
-                    <Button
-                      size="small"
-                      color="primary"
-                      variant="contained"
-                      sx={{ mr: 1 }}
-                      onClick={() => handleFazerChamado(chamado.id)}
-                      disabled={chamado.status === 'finalizado'}
-                    >
-                      Visualizar chamado
-                    </Button>
-                  </TableCell>
+                  {isDesktop ? (
+                    <TableCell>{chamado.endereco_textual || 'Endereço não disponível'}</TableCell>
+                  ) : (
+                    <TableCell>
+                      <Button
+                        size="small"
+                        color="primary"
+                        variant="text"
+                        sx={{ textTransform: 'none', fontWeight: 500, fontSize: '1em', p: 0, minWidth: 0 }}
+                        onClick={() => handleFazerChamado(chamado.id)}
+                        disabled={chamado.status === 'finalizado' || chamado.status === 'concluído'}
+                      >
+                        Visualizar
+                      </Button>
+                    </TableCell>
+                  )}
+                  {isDesktop && <TableCell>{formatarDataHora(chamado.data_abertura)}</TableCell>}
+                  {isDesktop && (
+                    <TableCell>
+                      <Button
+                        size="small"
+                        color="primary"
+                        variant="text"
+                        sx={{ textTransform: 'none', fontWeight: 500, fontSize: '1em', p: 0, minWidth: 0 }}
+                        onClick={() => handleFazerChamado(chamado.id)}
+                        disabled={chamado.status === 'finalizado' || chamado.status === 'concluído'}
+                      >
+                        Visualizar
+                      </Button>
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
@@ -284,6 +366,7 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
         chamadoId={popupChamadoId} 
         onClose={handleClosePopup} 
         nome={popupChamado?.nome} 
+        telefone={popupChamado?.telefone}
         endereco={popupChamado?.endereco} 
         status={chamados.find(c => c.id === popupChamadoId)?.status}
       />

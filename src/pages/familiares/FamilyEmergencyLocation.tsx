@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Box, Typography, Paper, CircularProgress, Button } from '@mui/material';
-import MapPatnerEme from './MapFamiliarEme';
+import MapPatnerEme from './MapFamily';
 
 const socorristaCoords = { lat: -25.4284, lng: -49.2733 };
 

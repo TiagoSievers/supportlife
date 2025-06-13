@@ -51,8 +51,7 @@ const rescuerLeafletIcon = L.icon({
   popupAnchor:  [0, -38]
 });
 
-const center = { lat: -23.55052, lng: -46.633308 };
-const rescuerPosition = { lat: -23.552, lng: -46.634 };
+// Removido valores fixos - usar apenas dados do banco
 
 const MapPatnerNavigation: React.FC<MapPatnerProps> = (props) => {
   return <MapPatnerMap {...props} />;
@@ -124,11 +123,13 @@ const MapPatnerMap: React.FC<MapPatnerProps> = ({
             />
           )}
           {children}
-          <Marker position={ambulancePosition || center} icon={ambulanceLeafletIcon}>
+          {ambulancePosition && (
+            <Marker position={ambulancePosition} icon={ambulanceLeafletIcon}>
             <Popup>
               Marcador de ambulância personalizado!
             </Popup>
           </Marker>
+          )}
           <Marker position={center}>
               <Popup>
               Local do chamado (paciente)

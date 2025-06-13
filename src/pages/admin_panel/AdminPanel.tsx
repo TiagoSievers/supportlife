@@ -41,6 +41,9 @@ import PartnerList from './PartnerList';
 import AdminUserList from './AdminUserList';
 import ChamadoList from '../chamado/ChamadoList';
 import ClientDialog, { Cliente } from './ClientDialog';
+import MenuIcon from '@mui/icons-material/Menu';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import { useTheme } from '@mui/material/styles';
 
 const drawerWidth = 240;
 
@@ -50,7 +53,10 @@ const AdminPanel: React.FC = () => {
   const [dialogType, setDialogType] = useState('');
   const [hasNewChamado, setHasNewChamado] = useState(false);
   const [editClient, setEditClient] = useState<Cliente | null>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   // ===== handleSectionChange =====
   const handleSectionChange = (section: string) => {
@@ -103,6 +109,11 @@ const AdminPanel: React.FC = () => {
       default:
         return '';
     }
+  };
+
+  // ===== handleDrawerToggle =====
+  const handleDrawerToggle = () => {
+    setMobileOpen(!mobileOpen);
   };
 
   // ===== renderMainContent =====
@@ -181,9 +192,22 @@ const AdminPanel: React.FC = () => {
       {/* Header */}
       <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
         <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
-          <Typography variant="h6" noWrap component="div">
-            Painel Administrativo
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            {isMobile && (
+              <IconButton
+                color="inherit"
+                aria-label="open drawer"
+                edge="start"
+                onClick={handleDrawerToggle}
+                sx={{ mr: 2 }}
+              >
+                <MenuIcon />
+              </IconButton>
+            )}
+            <Typography variant="h6" noWrap component="div">
+              Painel Administrativo
+            </Typography>
+          </Box>
           <IconButton color="inherit" sx={{ ml: 2 }}>
             <Badge color="error" variant="dot" invisible={!hasNewChamado}>
               <NotificationsIcon />
@@ -192,98 +216,137 @@ const AdminPanel: React.FC = () => {
         </Toolbar>
       </AppBar>
       
-      {/* Sidebar */}
-      <Drawer
-        variant="permanent"
-        sx={{
-          width: drawerWidth,
-          flexShrink: 0,
-          [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' },
-        }}
-      >
-        <Box>
-          <Toolbar /> {/* Espaço para compensar o AppBar */}
-          {/* Marca d'água mais para baixo no menu lateral */}
-          <Box
-            sx={{
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              width: '100%',
-              mt: 4, // aumenta o espaçamento para descer a imagem
-              mb: 1,
-            }}
-          >
-            <Box
-              component="img"
-              src={require('../../assets/cropped_image.png')}
-              alt="Marca d'água Support Life"
-              sx={{
-                width: '80%',
-                pointerEvents: 'none',
-                userSelect: 'none',
-                display: 'block',
-              }}
-            />
+      {/* Sidebar Drawer */}
+      {/* Mobile Drawer */}
+      {isMobile ? (
+        <Drawer
+          variant="temporary"
+          open={mobileOpen}
+          onClose={handleDrawerToggle}
+          ModalProps={{ keepMounted: true }}
+          sx={{
+            display: { xs: 'block', md: 'none' },
+            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: drawerWidth },
+          }}
+        >
+          {/* Drawer content */}
+          <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <Box>
+              <Toolbar />
+              <Box
+                sx={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  width: '100%',
+                  mt: 4,
+                  mb: 1,
+                }}
+              >
+                <Box
+                  component="img"
+                  src={require('../../assets/cropped_image.png')}
+                  alt="Marca d'água Support Life"
+                  sx={{ width: '80%', pointerEvents: 'none', userSelect: 'none', display: 'block' }}
+                />
+              </Box>
+              <Box sx={{ overflow: 'auto' }}>
+                <List>
+                  <ListItemButton selected={selectedSection === 'Chamados'} onClick={() => { handleSectionChange('Chamados'); handleDrawerToggle(); }}>
+                    <ListItemIcon><AdminPanelSettingsIcon /></ListItemIcon>
+                    <ListItemText primary="Chamados" />
+                  </ListItemButton>
+                  <ListItemButton selected={selectedSection === 'Clientes'} onClick={() => { handleSectionChange('Clientes'); handleDrawerToggle(); }}>
+                    <ListItemIcon><PeopleIcon /></ListItemIcon>
+                    <ListItemText primary="Clientes" />
+                  </ListItemButton>
+                  <ListItemButton selected={selectedSection === 'Socorristas'} onClick={() => { handleSectionChange('Socorristas'); handleDrawerToggle(); }}>
+                    <ListItemIcon><LocalHospitalIcon /></ListItemIcon>
+                    <ListItemText primary="Socorristas" />
+                  </ListItemButton>
+                  <ListItemButton selected={selectedSection === 'Usuários Administrativos'} onClick={() => { handleSectionChange('Usuários Administrativos'); handleDrawerToggle(); }}>
+                    <ListItemIcon><AdminPanelSettingsIcon /></ListItemIcon>
+                    <ListItemText primary="Usuários Administrativos" />
+                  </ListItemButton>
+                </List>
+              </Box>
+            </Box>
+            <Box sx={{ p: 2 }}>
+              <List>
+                <ListItemButton onClick={() => { handleLogout(); handleDrawerToggle(); }}>
+                  <ListItemIcon><LogoutIcon /></ListItemIcon>
+                  <ListItemText primary="Sair" />
+                </ListItemButton>
+              </List>
+            </Box>
           </Box>
-          <Box sx={{ overflow: 'auto' }}>
+        </Drawer>
+      ) : (
+        <Drawer
+          variant="permanent"
+          sx={{
+            width: drawerWidth,
+            flexShrink: 0,
+            display: { xs: 'none', md: 'flex' },
+            [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' },
+          }}
+          open
+        >
+          <Box>
+            <Toolbar />
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                width: '100%',
+                mt: 4,
+                mb: 1,
+              }}
+            >
+              <Box
+                component="img"
+                src={require('../../assets/cropped_image.png')}
+                alt="Marca d'água Support Life"
+                sx={{ width: '80%', pointerEvents: 'none', userSelect: 'none', display: 'block' }}
+              />
+            </Box>
+            <Box sx={{ overflow: 'auto' }}>
+              <List>
+                <ListItemButton selected={selectedSection === 'Chamados'} onClick={() => handleSectionChange('Chamados')}>
+                  <ListItemIcon><AdminPanelSettingsIcon /></ListItemIcon>
+                  <ListItemText primary="Chamados" />
+                </ListItemButton>
+                <ListItemButton selected={selectedSection === 'Clientes'} onClick={() => handleSectionChange('Clientes')}>
+                  <ListItemIcon><PeopleIcon /></ListItemIcon>
+                  <ListItemText primary="Clientes" />
+                </ListItemButton>
+                <ListItemButton selected={selectedSection === 'Socorristas'} onClick={() => handleSectionChange('Socorristas')}>
+                  <ListItemIcon><LocalHospitalIcon /></ListItemIcon>
+                  <ListItemText primary="Socorristas" />
+                </ListItemButton>
+                <ListItemButton selected={selectedSection === 'Usuários Administrativos'} onClick={() => handleSectionChange('Usuários Administrativos')}>
+                  <ListItemIcon><AdminPanelSettingsIcon /></ListItemIcon>
+                  <ListItemText primary="Usuários Administrativos" />
+                </ListItemButton>
+              </List>
+            </Box>
+          </Box>
+          <Box sx={{ p: 2 }}>
             <List>
-              <ListItemButton
-                selected={selectedSection === 'Chamados'}
-                onClick={() => handleSectionChange('Chamados')}
-              >
-                <ListItemIcon>
-                  <AdminPanelSettingsIcon />
-                </ListItemIcon>
-                <ListItemText primary="Chamados" />
-              </ListItemButton>
-              <ListItemButton
-                selected={selectedSection === 'Clientes'} 
-                onClick={() => handleSectionChange('Clientes')}
-              >
-                <ListItemIcon>
-                  <PeopleIcon />
-                </ListItemIcon>
-                <ListItemText primary="Clientes" />
-              </ListItemButton>
-              <ListItemButton 
-                selected={selectedSection === 'Socorristas'} 
-                onClick={() => handleSectionChange('Socorristas')}
-              >
-                <ListItemIcon>
-                  <LocalHospitalIcon />
-                </ListItemIcon>
-                <ListItemText primary="Socorristas" />
-              </ListItemButton>
-              <ListItemButton
-                selected={selectedSection === 'Usuários Administrativos'} 
-                onClick={() => handleSectionChange('Usuários Administrativos')}
-              >
-                <ListItemIcon>
-                  <AdminPanelSettingsIcon />
-                </ListItemIcon>
-                <ListItemText primary="Usuários Administrativos" />
+              <ListItemButton onClick={handleLogout}>
+                <ListItemIcon><LogoutIcon /></ListItemIcon>
+                <ListItemText primary="Sair" />
               </ListItemButton>
             </List>
           </Box>
-        </Box>
-        {/* Botão de logout na parte inferior */}
-        <Box sx={{ p: 2 }}>
-          <List>
-            <ListItemButton onClick={handleLogout}>
-              <ListItemIcon>
-                <LogoutIcon />
-              </ListItemIcon>
-              <ListItemText primary="Sair" />
-            </ListItemButton>
-          </List>
-        </Box>
-      </Drawer>
+        </Drawer>
+      )}
       
       {/* Main Content */}
       <Box
         component="main"
-        sx={{ flexGrow: 1, p: 3, width: { sm: `calc(100% - ${drawerWidth}px)` } }}
+        sx={{ flexGrow: 1, p: { xs: 1, sm: 3 }, width: { xs: '100%', md: `calc(100% - ${drawerWidth}px)` }, minHeight: '100vh', boxSizing: 'border-box' }}
       >
         <Toolbar /> {/* Espaço para compensar o AppBar */}
         {renderMainContent()}

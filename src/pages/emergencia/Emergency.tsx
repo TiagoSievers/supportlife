@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Box, 
   Typography, 
@@ -18,20 +18,21 @@ import {
   LocationOn as LocationOnIcon,
   Phone as PhoneIcon
 } from '@mui/icons-material';
-import Map from './Map';
+import MapClient from './MapClient';
 import { useNavigate } from 'react-router-dom';
 import Cronometro from './Cronometro';
-import { getAddressFromCoords } from './getAddressFromCoords';
 import { buscarFamiliares } from '../familiares/api';
 import type { FamilyMember } from '../familiares/FamilyMemberDialog';
 import { supabase } from '../../Supabase/supabaseRealtimeClient';
-import { MapMarker } from './Map';
+import { calcularDistanciaTotalKm } from './MapClient';
+
 
 interface Chamado {
-  id: number;
-  cliente_id: number;
+  id: string;
+  cliente_id: string;
   status: string;
   localizacao: string;
+  endereco_textual?: string;
   data_abertura: string;
   notificacao_familiares?: any[];
   socorrista_id?: string;
@@ -47,60 +48,155 @@ interface Location {
 }
 */
 
-// Coordenadas de fallback (opcional, pode ser gerenciado no Map.tsx)
-const FALLBACK_CENTER = { lat: -23.5505, lng: -46.6333 };
+// Removido fallback - usar apenas dados do banco
 
 const Emergency: React.FC = () => {
   const [startTime] = useState(new Date().toLocaleTimeString());
   const [estimatedTime] = useState('15 minutos');
-  // Estado location removido
-  // const [location, setLocation] = useState<{lat: number, lng: number} | null>(null);
 
   const [familyContacts, setFamilyContacts] = useState<FamilyMember[]>([]);
 
   const [notification, setNotification] = useState({
     open: false,
     message: '',
-    // Ajustado tipo para incluir 'info' que usamos em finishEmergency
     severity: 'success' as 'success' | 'error' | 'info' | 'warning' 
   });
 
   const [chamado, setChamado] = useState<Chamado | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Novo estado para o endereço legível
-  const [address, setAddress] = useState<string | null>(null);
-
   const [notificados, setNotificados] = useState<string[]>([]);
-
   const [socorristaMarker, setSocorristaMarker] = useState<{ lat: number, lng: number } | null>(null);
+
+  // Novos estados para rota e timing (como EmergencyFamily)
+  const [routeCoords, setRouteCoords] = useState<{ lat: number; lng: number }[]>([]);
+  const [loadingRoute, setLoadingRoute] = useState(false);
+  const [socorristaPos, setSocorristaPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [currentRouteCoords, setCurrentRouteCoords] = useState<{ lat: number; lng: number }[]>([]);
+  const [routeDuration, setRouteDuration] = useState<number | null>(null);
+  const [distanciaRota, setDistanciaRota] = useState<number | null>(null);
+  const [tempoEstimado60, setTempoEstimado60] = useState<number | null>(null);
+  const [tempoEstimadoSimulacao, setTempoEstimadoSimulacao] = useState<number | null>(null);
+
+  // Rate limiting para API OSRM (como EmergencyFamily)
+  const lastOSRMCall = useRef<number>(0);
+  const MIN_OSRM_INTERVAL = 30000; // 30 segundos entre chamadas
+  const routeCache = useRef<Map<string, any>>(new Map());
+  const isOSRMCallInProgress = useRef<boolean>(false);
+  const lastRouteRecalculation = useRef<number>(0);
+  const MIN_RECALCULATION_INTERVAL = 15000; // 15 segundos mínimo entre recálculos
+  const lastSocorristaPos = useRef<{ lat: number; lng: number } | null>(null);
 
   const navigate = useNavigate();
 
-  const fetchChamados = async () => {
-    setLoading(true);
-    setError(null);
+  // Função para buscar rota real via OSRM com rate limiting (como EmergencyFamily)
+  const getRouteFromOSRM = useCallback(async (start: { lat: number; lng: number }, end: { lat: number; lng: number }) => {
+    if (isOSRMCallInProgress.current) {
+      console.log('[OSRM EMERGENCY] Chamada já em progresso, ignorando...');
+      return { coords: [], duration: null };
+    }
+    
+    const cacheKey = `${start.lat.toFixed(3)},${start.lng.toFixed(3)}-${end.lat.toFixed(3)},${end.lng.toFixed(3)}`;
+    
+    if (routeCache.current.has(cacheKey)) {
+      console.log('[OSRM EMERGENCY] Usando rota do cache');
+      return routeCache.current.get(cacheKey);
+    }
+    
+    const now = Date.now();
+    const timeSinceLastCall = now - lastOSRMCall.current;
+    
+    if (timeSinceLastCall < MIN_OSRM_INTERVAL) {
+      const waitTime = MIN_OSRM_INTERVAL - timeSinceLastCall;
+      console.log(`[OSRM EMERGENCY] Rate limiting: aguardando ${Math.round(waitTime/1000)}s`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    
+    isOSRMCallInProgress.current = true;
+    lastOSRMCall.current = Date.now();
+    
     try {
+      const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
+      console.log('[OSRM EMERGENCY] Fazendo requisição para API...');
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        if (response.status === 429) {
+          console.warn('[OSRM EMERGENCY] Rate limit atingido, aguardando 60 segundos...');
+          await new Promise(resolve => setTimeout(resolve, 60000));
+          throw new Error('Rate limit - tente novamente mais tarde');
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      if (!data.routes || !data.routes[0]) {
+        console.warn('[OSRM EMERGENCY] Nenhuma rota encontrada');
+        return { coords: [], duration: null };
+      }
+      
+      const result = {
+        coords: data.routes[0].geometry.coordinates.map(([lng, lat]: [number, number]) => ({ lat, lng })),
+        duration: data.routes[0].duration
+      };
+      
+      const variations = [
+        cacheKey,
+        `${start.lat.toFixed(2)},${start.lng.toFixed(2)}-${end.lat.toFixed(2)},${end.lng.toFixed(2)}`,
+        `${start.lat.toFixed(4)},${start.lng.toFixed(4)}-${end.lat.toFixed(4)},${end.lng.toFixed(4)}`
+      ];
+      
+      variations.forEach(key => {
+        routeCache.current.set(key, result);
+      });
+      
+      console.log('[OSRM EMERGENCY] Rota salva no cache com múltiplas variações');
+      return result;
+    } catch (error) {
+      console.error('[OSRM EMERGENCY] Erro ao buscar rota:', error);
+      return { coords: [], duration: null };
+    } finally {
+      isOSRMCallInProgress.current = false;
+    }
+  }, [MIN_OSRM_INTERVAL]);
+
+  // Buscar chamado inicial e configurar realtime (como EmergencyFamily)
+  useEffect(() => {
+    const fetchChamadoInicial = async () => {
       setLoading(true);
       setError(null);
-      const url = process.env.REACT_APP_SUPABASE_URL;
-      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-      if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
-      const accessToken = localStorage.getItem('accessToken');
+      try {
       const clienteId = localStorage.getItem('clienteId');
       if (!clienteId) throw new Error('Cliente não identificado');
-      const response = await fetch(`${url}/rest/v1/chamado?cliente_id=eq.${clienteId}&order=data_abertura.desc&limit=1`, {
-        method: 'GET',
-        headers: {
-          'apikey': serviceKey,
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
+        
+        const { data, error } = await supabase
+          .from('chamado')
+          .select('*')
+          .eq('cliente_id', clienteId)
+          .order('data_abertura', { ascending: false })
+          .limit(1);
+        
+        if (error) throw error;
+        
+        const chamadoAtual = data?.[0] || null;
+        setChamado(chamadoAtual);
+        
+        console.log('[EMERGENCY] Dados completos do chamado:', {
+          id: chamadoAtual?.id,
+          localizacao: chamadoAtual?.localizacao,
+          endereco_textual: chamadoAtual?.endereco_textual,
+          status: chamadoAtual?.status,
+          socorrista_id: chamadoAtual?.socorrista_id,
+          posicao_inicial_socorrista: chamadoAtual?.posicao_inicial_socorrista
+        });
+        
+        if (chamadoAtual?.socorrista_id && chamadoAtual?.posicao_inicial_socorrista) {
+          const [lat, lng] = chamadoAtual.posicao_inicial_socorrista.split(',').map(Number);
+          setSocorristaPos({ lat, lng });
+          console.log('[EMERGENCY] Posição socorrista definida:', { lat, lng });
         }
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error_description || data.message || `Erro ${response.status}`);
-      setChamado(data[0] || null);
+        
+        console.log('[EMERGENCY] Chamado inicial carregado:', chamadoAtual?.id);
     } catch (err: any) {
       setError(err.message || 'Erro ao buscar chamado');
       setChamado(null);
@@ -109,59 +205,152 @@ const Emergency: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    fetchChamados();
+    fetchChamadoInicial();
   }, []);
 
-  // Polling a cada 5 segundos para atualizar o chamado e marcador do socorrista
-  /*
+  // Realtime subscription para mudanças no chamado (como EmergencyFamily)
   useEffect(() => {
-    const interval = setInterval(async () => {
-      await fetchChamados();
-    }, 5000);
-    return () => clearInterval(interval);
+    const clienteId = localStorage.getItem('clienteId');
+    if (!clienteId) return;
+
+    console.log('[EMERGENCY] Configurando subscription realtime...');
+    
+    const subscription = supabase
+      .channel('emergency-chamado-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'chamado',
+          filter: `cliente_id=eq.${clienteId}`
+        },
+        (payload) => {
+          console.log('[EMERGENCY] Mudança no chamado via realtime:', payload);
+          
+          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+            const novoChamado = payload.new as Chamado;
+            setChamado(novoChamado);
+            
+            // Atualiza posição do socorrista se mudou
+            if (novoChamado.socorrista_id && novoChamado.posicao_inicial_socorrista) {
+              const [lat, lng] = novoChamado.posicao_inicial_socorrista.split(',').map(Number);
+              setSocorristaPos({ lat, lng });
+              console.log('[EMERGENCY] Posição socorrista atualizada via realtime:', { lat, lng });
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      console.log('[EMERGENCY] Removendo subscription realtime');
+      subscription.unsubscribe();
+    };
   }, []);
-  */
 
-  // Atualiza marcador do socorrista quando chamado muda
+  // Recalcula rota sempre que a posição do socorrista muda (como EmergencyFamily)
   useEffect(() => {
-    if (chamado?.socorrista_id && chamado?.posicao_inicial_socorrista) {
-      const [lat, lng] = chamado.posicao_inicial_socorrista.split(',').map(Number);
-      setSocorristaMarker({ lat, lng });
-    } else {
-      setSocorristaMarker(null);
-    }
-  }, [chamado?.socorrista_id, chamado?.posicao_inicial_socorrista]);
-
-  // Montar marcadores para o mapa
-  const markers: MapMarker[] = [];
-  if (chamado?.localizacao) {
-    const [lat, lng] = chamado.localizacao.split(',').map(Number);
-    markers.push({
-      position: { lat, lng },
-      title: 'Paciente',
-      description: 'Localização do paciente',
-      type: 'paciente'
-    });
-  }
-  if (socorristaMarker) {
-    markers.push({
-      position: socorristaMarker,
-      title: 'Socorrista',
-      description: 'Posição inicial do socorrista',
-      type: 'socorrista' as const
-    });
-  }
-
-  // Buscar endereço legível quando o chamado mudar
-  useEffect(() => {
-    if (chamado?.localizacao) {
+    if (chamado && chamado.localizacao && socorristaPos) {
       const [lat, lon] = chamado.localizacao.split(',').map(Number);
-      getAddressFromCoords(lat, lon).then(setAddress);
-    } else {
-      setAddress(null);
+      const destino = { lat, lng: lon };
+      
+      // Verifica se a posição mudou significativamente
+      if (lastSocorristaPos.current) {
+        const distanciaChange = Math.hypot(
+          (socorristaPos.lat - lastSocorristaPos.current.lat) * 111000,
+          (socorristaPos.lng - lastSocorristaPos.current.lng) * 111000 * Math.cos(socorristaPos.lat * Math.PI / 180)
+        );
+        
+        if (distanciaChange < 50) { // Menos de 50m, não recalcula
+          return;
+        }
+      }
+      
+      lastSocorristaPos.current = socorristaPos;
+      
+      console.log('[EMERGENCY] Posição do socorrista mudou, recalculando rota...', {
+        socorrista: socorristaPos,
+        destino: destino
+      });
+      
+      // Trimming imediato da rota atual
+      if (currentRouteCoords.length > 0) {
+        const remainingRoute = currentRouteCoords.filter(point => {
+          const distance = Math.hypot(
+            (point.lat - socorristaPos.lat) * 111000,
+            (point.lng - socorristaPos.lng) * 111000 * Math.cos(socorristaPos.lat * Math.PI / 180)
+          );
+          return distance > 100; // Remove pontos a menos de 100m
+        });
+        
+        if (remainingRoute.length !== currentRouteCoords.length) {
+          console.log('[EMERGENCY] Trimming imediato: removidos', currentRouteCoords.length - remainingRoute.length, 'pontos');
+          setCurrentRouteCoords(remainingRoute);
+        }
+      }
+      
+      // Debounce para recálculo completo
+      const timer = setTimeout(async () => {
+        const now = Date.now();
+        const timeSinceLastRecalc = now - lastRouteRecalculation.current;
+        
+        if (timeSinceLastRecalc < MIN_RECALCULATION_INTERVAL) {
+          console.log('[EMERGENCY] Recálculo muito recente, aguardando...');
+          return;
+        }
+        
+        lastRouteRecalculation.current = now;
+        setLoadingRoute(true);
+        
+        try {
+          console.log('[EMERGENCY] Iniciando recálculo OSRM...', { from: socorristaPos, to: destino });
+          const result = await getRouteFromOSRM(socorristaPos, destino);
+          if (result.coords.length > 0) {
+            console.log('[EMERGENCY] Rota OSRM recebida:', result.coords.length, 'pontos');
+            setCurrentRouteCoords(result.coords);
+            setRouteDuration(result.duration);
+            
+            const distancia = calcularDistanciaTotalKm(result.coords);
+            setDistanciaRota(distancia);
+            
+            // Estimativas de tempo
+            const tempo60 = distancia ? (distancia / 60) * 60 : null;
+            const tempoSimulacao = result.coords.length * 8; // 8s por ponto
+            
+            setTempoEstimado60(tempo60);
+            setTempoEstimadoSimulacao(tempoSimulacao);
+            
+            console.log('[EMERGENCY] Rota recalculada:', {
+              pontos: result.coords.length,
+              distancia: distancia?.toFixed(2) + 'km',
+              tempo60: tempo60 ? Math.round(tempo60) + 'min' : null,
+              tempoSimulacao: Math.round(tempoSimulacao / 60) + 'min'
+            });
+          } else {
+            console.warn('[EMERGENCY] OSRM retornou rota vazia');
+          }
+        } catch (error) {
+          console.error('[EMERGENCY] Erro ao recalcular rota:', error);
+        } finally {
+          setLoadingRoute(false);
+        }
+      }, 8000); // 8 segundos de debounce
+      
+      return () => clearTimeout(timer);
     }
-  }, [chamado?.localizacao]);
+  }, [socorristaPos, chamado, getRouteFromOSRM]);
+
+  // Atualiza marcador do socorrista quando posição muda
+  useEffect(() => {
+    if (socorristaPos) {
+      setSocorristaMarker(socorristaPos);
+    }
+  }, [socorristaPos]);
+
+
+
+  // Endereço agora vem diretamente do banco de dados via chamado.endereco_textual
 
   // Buscar familiares reais ao montar
   useEffect(() => {
@@ -319,7 +508,7 @@ const Emergency: React.FC = () => {
                    Localização
                  </Typography>
                  <Typography variant="body2">
-                   {address || chamado.localizacao || 'Não informada'}
+                   {chamado.endereco_textual || chamado.localizacao || 'Não informada'}
                  </Typography>
                </Box>
              </>
@@ -329,15 +518,87 @@ const Emergency: React.FC = () => {
          </Box>
       </Paper>
 
-      {/* Renderização do Mapa simplificada */}
-      <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden', mb: 3 }}>
-        <Map
-          center={FALLBACK_CENTER}
-          zoom={15}
-          showUserLocation={true}
-          markers={markers}
-        />
+      {/* Renderização do Mapa usando MapClient */}
+      <Box sx={{ mb: 3 }}>
+{chamado?.localizacao ? (() => {
+          const centerCoords = {
+            lat: Number(chamado.localizacao.split(',')[0]),
+            lng: Number(chamado.localizacao.split(',')[1])
+          };
+          
+          const patientCoords = {
+            lat: Number(chamado.localizacao.split(',')[0]),
+            lng: Number(chamado.localizacao.split(',')[1])
+          };
+          
+          console.log('[EMERGENCY] Coordenadas do mapa:', {
+            center: centerCoords,
+            patient: patientCoords,
+            ambulance: socorristaMarker,
+            chamadoLocalizacao: chamado.localizacao
+          });
+          
+          return (
+            <MapClient
+              center={centerCoords}
+              zoom={15}
+              ambulancePosition={socorristaMarker || undefined}
+              routeCoords={currentRouteCoords}
+              patientPosition={patientCoords}
+            />
+          );
+        })() : (
+          <div>Carregando localização do chamado...</div>
+        )}
+      </Box>
+      
+      {/* Informações da Rota e Estimativas */}
+      {(loadingRoute || distanciaRota || tempoEstimado60) && (
+        <Paper elevation={0} sx={{ borderRadius: 2, backgroundColor: 'transparent', boxShadow: 'none', border: 'none', mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Informações da Rota
+          </Typography>
+          
+          {loadingRoute && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <CircularProgress size={16} />
+              <Typography variant="body2" color="text.secondary">
+                Calculando rota...
+              </Typography>
+            </Box>
+          )}
+          
+          {distanciaRota && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                Distância: <strong>{distanciaRota.toFixed(1)} km</strong>
+              </Typography>
+            </Box>
+          )}
+          
+          {tempoEstimado60 && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                Tempo estimado (60 km/h): <strong>{Math.round(tempoEstimado60)} minutos</strong>
+              </Typography>
+            </Box>
+          )}
+          
+          {tempoEstimadoSimulacao && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" color="text.secondary">
+                Tempo de simulação: <strong>{Math.round(tempoEstimadoSimulacao / 60)} minutos</strong>
+              </Typography>
+            </Box>
+          )}
+          
+          {currentRouteCoords.length > 0 && (
+            <Typography variant="body2" color="text.secondary">
+              Pontos da rota: {currentRouteCoords.length}
+            </Typography>
+          )}
       </Paper>
+      )}
       
       {/* Card de Notificar Familiares */}
       <Paper elevation={0} sx={{ borderRadius: 2, backgroundColor: 'transparent', boxShadow: 'none', border: 'none' }}>
@@ -421,6 +682,22 @@ const Emergency: React.FC = () => {
          </Box>
       </Paper>
       </Box>
+
+      {/* Snackbar para notificações */}
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={6000}
+        onClose={handleCloseNotification}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={handleCloseNotification}
+          severity={notification.severity}
+          sx={{ width: '100%' }}
+        >
+          {notification.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

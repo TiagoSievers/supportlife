@@ -20,9 +20,10 @@ import ChamadoDialog, { Chamado } from '../cliente/ChamadoDialog';
 
 interface NavbarProps {
   hasNewChamado?: boolean;
+  onNotificationClick?: () => void;
 }
 
-const Navbar: React.FC<NavbarProps> = ({ hasNewChamado = false }) => {
+const Navbar: React.FC<NavbarProps> = ({ hasNewChamado = false, onNotificationClick }) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [clientDialogOpen, setClientDialogOpen] = useState(false);
   const [clientData, setClientData] = useState<Cliente | undefined>(undefined);
@@ -32,6 +33,7 @@ const Navbar: React.FC<NavbarProps> = ({ hasNewChamado = false }) => {
   const location = useLocation();
   const isHome = location && location.pathname === '/';
   const navigate = useNavigate();
+  const clienteId = localStorage.getItem('clienteId');
 
   const handleDrawerOpen = () => setDrawerOpen(true);
   const handleDrawerClose = () => setDrawerOpen(false);
@@ -90,7 +92,12 @@ const Navbar: React.FC<NavbarProps> = ({ hasNewChamado = false }) => {
         elevation={0}
         sx={{ 
           backgroundColor: 'white',
-          borderBottom: '1px solid #e0e0e0'
+          borderBottom: '1px solid #e0e0e0',
+          '@keyframes pulse': {
+            '0%': { opacity: 1 },
+            '50%': { opacity: 0.5 },
+            '100%': { opacity: 1 }
+          }
         }}
       >
         <Toolbar sx={{ justifyContent: 'space-between' }}>
@@ -114,75 +121,65 @@ const Navbar: React.FC<NavbarProps> = ({ hasNewChamado = false }) => {
           </Link>
 
           <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center' }}>
-            {isLoggedIn && (
-              <>
-                {!isHome && (
-                  <>
-                    <IconButton
-                      size="large"
-                      edge="end"
-                      aria-label="notifications"
-                      sx={{ color: '#757575', ml: 1 }}
-                    >
-                      <Badge color="error" variant="dot" invisible={!hasNewChamado}>
-                        <NotificationsIcon />
-                      </Badge>
-                    </IconButton>
-                    <IconButton
-                      size="large"
-                      edge="end"
-                      aria-label="menu"
-                      sx={{ color: '#757575', ml: 1 }}
-                      onClick={handleDrawerOpen}
-                    >
-                      <MenuIcon />
-                    </IconButton>
-                  </>
-                )}
-                {isHome && (
-                  <IconButton
-                    size="large"
-                    edge="end"
-                    aria-label="menu"
-                    sx={{ color: '#757575', ml: 1 }}
-                    onClick={handleDrawerOpen}
-                  >
-                    <MenuIcon />
-                  </IconButton>
-                )}
-              </>
+            {hasNewChamado && (
+              <IconButton
+                size="large"
+                edge="end"
+                aria-label="notifications"
+                onClick={onNotificationClick}
+                sx={{ 
+                  color: '#f44336',
+                  mr: 1,
+                  animation: 'pulse 1.5s infinite'
+                }}
+              >
+                <Badge color="error" variant="dot">
+                  <NotificationsIcon />
+                </Badge>
+              </IconButton>
             )}
+            <IconButton
+              size="large"
+              edge="end"
+              aria-label="menu"
+              sx={{ color: '#757575', ml: 1 }}
+              onClick={handleDrawerOpen}
+            >
+              <MenuIcon />
+            </IconButton>
           </Box>
         </Toolbar>
       </AppBar>
       <Drawer anchor="left" open={drawerOpen} onClose={handleDrawerClose}>
         <Box sx={{ width: 250, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }} role="presentation" onClick={handleDrawerClose}>
-          <List>
-            <ListItem disablePadding>
-              <ListItemButton onClick={() => handleNavigate('/home') }>
-                <ListItemIcon><HomeIcon /></ListItemIcon>
-                <ListItemText primary="Home" />
-              </ListItemButton>
-            </ListItem>
-            <ListItem disablePadding>
-              <ListItemButton onClick={handleOpenClientDialog}>
-                <ListItemIcon><ProfileIcon /></ListItemIcon>
-                <ListItemText primary="Meu Perfil" />
-              </ListItemButton>
-            </ListItem>
-            <ListItem disablePadding>
-              <ListItemButton onClick={() => handleNavigate('/family')}>
-                <ListItemIcon><FamilyIcon /></ListItemIcon>
-                <ListItemText primary="Familiares" />
-              </ListItemButton>
-            </ListItem>
-            <ListItem disablePadding>
-              <ListItemButton onClick={() => handleNavigate('/chamado-cliente')}>
-                <ListItemIcon><AdminIcon /></ListItemIcon>
-                <ListItemText primary="Histórico de chamados" />
-              </ListItemButton>
-            </ListItem>
-          </List>
+          {clienteId ? (
+            <List>
+              <ListItem disablePadding>
+                <ListItemButton onClick={() => handleNavigate('/home') }>
+                  <ListItemIcon><HomeIcon /></ListItemIcon>
+                  <ListItemText primary="Home" />
+                </ListItemButton>
+              </ListItem>
+              <ListItem disablePadding>
+                <ListItemButton onClick={handleOpenClientDialog}>
+                  <ListItemIcon><ProfileIcon /></ListItemIcon>
+                  <ListItemText primary="Meu Perfil" />
+                </ListItemButton>
+              </ListItem>
+              <ListItem disablePadding>
+                <ListItemButton onClick={() => handleNavigate('/family')}>
+                  <ListItemIcon><FamilyIcon /></ListItemIcon>
+                  <ListItemText primary="Familiares" />
+                </ListItemButton>
+              </ListItem>
+              <ListItem disablePadding>
+                <ListItemButton onClick={() => handleNavigate('/chamado-cliente')}>
+                  <ListItemIcon><AdminIcon /></ListItemIcon>
+                  <ListItemText primary="Histórico de chamados" />
+                </ListItemButton>
+              </ListItem>
+            </List>
+          ) : null}
           <Box sx={{ p: 2, borderTop: '1px solid #e0e0e0' }}>
             <ListItem disablePadding>
               <ListItemButton onClick={() => {

@@ -21,9 +21,11 @@ interface CallModalProps {
   nome?: string;
   endereco?: string;
   status?: string;
+  telefone?: string;
+  cliente?: any;
 }
 
-const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, endereco, status }) => {
+const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, endereco, status, telefone, cliente }) => {
   const [loading, setLoading] = useState(false);
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [loadingFamiliares, setLoadingFamiliares] = useState(false);
@@ -38,6 +40,8 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
 
   useEffect(() => {
     if (open) {
+      setNotificados([]);
+      setTelefoneCliente(undefined);
       setLoadingFamiliares(true);
       buscarFamiliares()
         .then((familiares) => {
@@ -87,11 +91,17 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
           const clienteResp = await fetch(`${url}/rest/v1/cliente?id=eq.${clienteId}`, { headers });
           const clienteData = await clienteResp.json();
           setTelefoneCliente(clienteData[0]?.telefone);
-          // Buscar todos os chamados do cliente
-          const response = await fetch(`${url}/rest/v1/chamado?select=*&cliente_id=eq.${clienteId}&order=data_abertura.desc`, {
-            headers
+          console.log('Telefone recebido no CallModal:', clienteData[0]?.telefone);
+          // Buscar todos os chamados do cliente (teste com curl fixo)
+          const response = await fetch('https://usqozshucjsgmfgaoiad.supabase.co/rest/v1/chamado?select=*&cliente_id=eq.12&order=data_abertura.desc', {
+            headers: {
+              'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzcW96c2h1Y2pzZ21mZ2FvaWFkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY3OTI4OTUsImV4cCI6MjA2MjM2ODg5NX0.DMNalkURt6sp2g21URpXfcY4ts53cLxbMR_spk-TgvQ',
+              'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsImtpZCI6IlNPZzBsRGZCMm95VHhnWjIiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL3VzcW96c2h1Y2pzZ21mZ2FvaWFkLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJjNDkxYzBjNC1lNGI2LTQxMGMtODVkNC1jMjUwMTc0ZjA0MGIiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzQ5Njc4MDE5LCJpYXQiOjE3NDkwNzMyMTksImVtYWlsIjoib3Jvc2lvMTExNEB1b3Jhay5jb20iLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsX3ZlcmlmaWVkIjp0cnVlfSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc0OTA3MzIxOX1dLCJzZXNzaW9uX2lkIjoiYzJlYjFjNjctMTgyZi00MDgxLTgzZGYtODIxNjJlMzVhNDg3IiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.UooyxmTZztdzRDsg4QrCR5DzrusFtX543RpZxP4Heok',
+              'Content-Type': 'application/json'
+            }
           });
           const data = await response.json();
+          console.log('Chamados retornados do fetch fixo:', data);
           setChamadosCliente(data);
         } catch (err) {
           setChamadosCliente([]);
@@ -212,7 +222,6 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
       if (response.status === 204) {
         console.log('[PATCH chamado] Sucesso: No Content (204)');
         setSnackbar({ open: true, message: 'Status do chamado alterado com sucesso!', severity: 'success' });
-        setTimeout(() => { onClose(); }, 1000);
       } else {
         const text = await response.text();
         if (text) {
@@ -220,14 +229,12 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
             const data = JSON.parse(text);
             console.log('[PATCH chamado] Resposta:', data);
             setSnackbar({ open: true, message: 'Status do chamado alterado com sucesso!', severity: 'success' });
-            setTimeout(() => { onClose(); }, 1000);
           } catch (jsonErr) {
             console.log('[PATCH chamado] Resposta não JSON:', text);
           }
         } else {
           console.log('[PATCH chamado] Sucesso: resposta vazia');
           setSnackbar({ open: true, message: 'Status do chamado alterado com sucesso!', severity: 'success' });
-          setTimeout(() => { onClose(); }, 1000);
         }
       }
     } catch (err) {
@@ -246,20 +253,38 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
     return `${dia}/${mes}/${ano} ${hora}:${min}`;
   }
 
+  console.log('Renderizando modal, telefoneCliente:', telefoneCliente);
   return (
     <Dialog open={open} onClose={onClose}>
       <DialogTitle>
         Chamado #{chamadoId}
       </DialogTitle>
       <DialogContent>
-        {nome && (
-          <Typography sx={{ mt: 1 }}><strong>Nome:</strong> {nome}</Typography>
+        {/* Exibe todos os campos principais do cliente, se existirem */}
+        {cliente && (
+          <Box sx={{ mt: 1, mb: 2 }}>
+            <Typography><strong>ID:</strong> {cliente.id}</Typography>
+            <Typography><strong>Nome:</strong> {cliente.nome}</Typography>
+            <Typography><strong>Telefone:</strong> {cliente.telefone || 'Não informado'}</Typography>
+            <Typography><strong>Status:</strong> {cliente.status}</Typography>
+            {endereco && (
+              <Typography><strong>Endereço:</strong> {endereco}</Typography>
+            )}
+          </Box>
         )}
-        {telefoneCliente && (
-          <Typography sx={{ mt: 1 }}><strong>Telefone:</strong> {telefoneCliente}</Typography>
-        )}
-        {endereco && (
-          <Typography sx={{ mt: 1 }}><strong>Endereço:</strong> {endereco}</Typography>
+        {/* Fallback para exibir nome/telefone/endereco antigos se não houver cliente */}
+        {!cliente && (
+          <>
+            {nome && (
+              <Typography sx={{ mt: 1 }}><strong>Nome:</strong> {nome}</Typography>
+            )}
+            <Typography sx={{ mt: 1 }}>
+              <strong>Telefone:</strong> {telefone || telefoneCliente || 'Não informado'}
+            </Typography>
+            {endereco && (
+              <Typography sx={{ mt: 1 }}><strong>Endereço:</strong> {endereco}</Typography>
+            )}
+          </>
         )}
         {(status !== 'Aceito / Em andamento') && (
           <Button
@@ -328,7 +353,6 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
                 if (response.status === 204) {
                   console.log('[PATCH chamado] Sucesso: No Content (204)');
                   setSnackbar({ open: true, message: 'Status do chamado alterado para Em análise!', severity: 'success' });
-                  setTimeout(() => { onClose(); }, 1000);
                 } else {
                   const text = await response.text();
                   if (text) {
@@ -336,14 +360,12 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
                       const data = JSON.parse(text);
                       console.log('[PATCH chamado] Resposta:', data);
                       setSnackbar({ open: true, message: 'Status do chamado alterado para Em análise!', severity: 'success' });
-                      setTimeout(() => { onClose(); }, 1000);
                     } catch (jsonErr) {
                       console.log('[PATCH chamado] Resposta não JSON:', text);
                     }
                   } else {
                     console.log('[PATCH chamado] Sucesso: resposta vazia');
                     setSnackbar({ open: true, message: 'Status do chamado alterado para Em análise!', severity: 'success' });
-                    setTimeout(() => { onClose(); }, 1000);
                   }
                 }
               } catch (err) {
@@ -413,7 +435,6 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
               if (response.status === 204) {
                 console.log('[PATCH chamado] Sucesso: No Content (204)');
                 setSnackbar({ open: true, message: 'Chamado finalizado com sucesso!', severity: 'success' });
-                setTimeout(() => { onClose(); }, 1000);
               } else {
                 const text = await response.text();
                 if (text) {
@@ -421,14 +442,12 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
                     const data = JSON.parse(text);
                     console.log('[PATCH chamado] Resposta:', data);
                     setSnackbar({ open: true, message: 'Chamado finalizado com sucesso!', severity: 'success' });
-                    setTimeout(() => { onClose(); }, 1000);
                   } catch (jsonErr) {
                     console.log('[PATCH chamado] Resposta não JSON:', text);
                   }
                 } else {
                   console.log('[PATCH chamado] Sucesso: resposta vazia');
                   setSnackbar({ open: true, message: 'Chamado finalizado com sucesso!', severity: 'success' });
-                  setTimeout(() => { onClose(); }, 1000);
                 }
               }
             } catch (err) {
@@ -477,31 +496,6 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
             ))}
           </List>
         )}
-        {/* Lista de chamados do cliente */}
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="subtitle1" sx={{ mb: 1 }}><strong>Chamados do Cliente</strong></Typography>
-          {loadingChamadosCliente ? (
-            <CircularProgress size={28} sx={{ display: 'block', mx: 'auto', my: 2 }} />
-          ) : chamadosCliente.length === 0 ? (
-            <Typography color="text.secondary">Nenhum chamado encontrado para este cliente.</Typography>
-          ) : (
-            <List>
-              {chamadosCliente.map((c) => (
-                <ListItem key={c.id}>
-                  <ListItemText
-                    primary={`#${c.id} - ${c.status}`}
-                    secondary={
-                      <>
-                        <span><strong>Data:</strong> {formatarDataHora(c.data_abertura)}</span><br />
-                        <span><strong>Endereço:</strong> {c.endereco_textual || c.localizacao}</span>
-                      </>
-                    }
-                  />
-                </ListItem>
-              ))}
-            </List>
-          )}
-        </Box>
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} color="primary" disabled={loading}>Fechar</Button>
