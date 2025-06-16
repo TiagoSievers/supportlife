@@ -37,7 +37,7 @@ const ResetPassword: React.FC = () => {
     }
 
     try {
-      await resetPassword(userToken, password);
+      await resetPassword(password, userToken);
       
       // ✅ PRESERVA O FLUXO ATUAL - busca dados do usuário
       const userData = await fetchAuthUserByToken(userToken);
