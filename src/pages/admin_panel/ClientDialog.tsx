@@ -118,7 +118,7 @@ const ClientDialog: React.FC<ClientDialogProps> = ({ open, onClose, initialData,
       // ... fetch do cliente para edição ...
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-      const accessToken = localStorage.getItem('accessToken');
+      const accessToken = localStorage.getItem('userToken');
       if (!url || !serviceKey) {
         console.error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
         return;
@@ -159,7 +159,7 @@ const ClientDialog: React.FC<ClientDialogProps> = ({ open, onClose, initialData,
         // Atualização (já implementado)
         const url = process.env.REACT_APP_SUPABASE_URL;
         const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-        const accessToken = localStorage.getItem('accessToken');
+        const accessToken = localStorage.getItem('userToken');
         if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
         const headers = {
           apikey: serviceKey,

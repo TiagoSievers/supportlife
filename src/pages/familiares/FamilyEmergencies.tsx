@@ -59,7 +59,7 @@ const FamilyEmergencies: React.FC<FamilyEmergenciesProps> = ({ onNewChamado }) =
         const url = process.env.REACT_APP_SUPABASE_URL;
         const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
         if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
-        const accessToken = localStorage.getItem('accessToken');
+        const accessToken = localStorage.getItem('userToken');
         const fetchUrl = `${url}/rest/v1/chamado?notificacao_familiares=cs.[{"id":"${familiarId}"}]&status=neq.concluído`;
         const fetchOptions = {
           method: 'GET',

@@ -34,7 +34,7 @@ const Family: React.FC = () => {
       try {
         const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
         const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-        const accessToken = localStorage.getItem('accessToken');
+        const accessToken = localStorage.getItem('userToken');
         const clienteId = localStorage.getItem('clienteId');
         if (!supabaseUrl || !serviceKey || !accessToken || !clienteId) {
           throw new Error('Configuração do Supabase ou autenticação ausente');

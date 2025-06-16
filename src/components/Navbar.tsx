@@ -29,7 +29,7 @@ const Navbar: React.FC<NavbarProps> = ({ hasNewChamado = false, onNotificationCl
   const [clientData, setClientData] = useState<Cliente | undefined>(undefined);
   const [chamadoDialogOpen, setChamadoDialogOpen] = useState(false);
   const [chamadoData, setChamadoData] = useState<Chamado | undefined>(undefined);
-  const isLoggedIn = Boolean(localStorage.getItem('accessToken'));
+  const isLoggedIn = Boolean(localStorage.getItem('userToken'));
   const location = useLocation();
   const isHome = location && location.pathname === '/';
   const navigate = useNavigate();

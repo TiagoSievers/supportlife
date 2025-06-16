@@ -16,7 +16,7 @@ const PartnerEmergencies: React.FC<PartnerEmergenciesProps> = ({ hasNewChamado, 
       try {
         const url = process.env.REACT_APP_SUPABASE_URL;
         const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-        const accessToken = localStorage.getItem('accessToken');
+        const accessToken = localStorage.getItem('userToken');
         const socorristaId = localStorage.getItem('socorristaId');
         if (!url || !serviceKey || !socorristaId) return;
         if (!accessToken) return;

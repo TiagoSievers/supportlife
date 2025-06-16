@@ -105,7 +105,7 @@ export type FamiliarParams = {
 // Cria um novo familiar
 export async function criarFamiliar({ user_id, cliente_id, nome, parentesco, telefone, email }: FamiliarParams): Promise<boolean> {
   const body = { user_id, cliente_id, nome, parentesco, telefone, email };
-  const accessToken = localStorage.getItem('accessToken');
+  const accessToken = localStorage.getItem('userToken');
   const response = await fetch(`${url}/rest/v1/familiares`, {
     method: 'POST',
     headers: {

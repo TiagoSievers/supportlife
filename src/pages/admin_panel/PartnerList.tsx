@@ -51,7 +51,7 @@ const PartnerList: React.FC = () => {
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
       if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
-      const accessToken = localStorage.getItem('accessToken');
+      const accessToken = localStorage.getItem('userToken');
       const response = await fetch(`${url}/rest/v1/socorrista`, {
         method: 'GET',
         headers: {
@@ -109,7 +109,7 @@ const PartnerList: React.FC = () => {
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
       if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
-      const accessToken = localStorage.getItem('accessToken');
+      const accessToken = localStorage.getItem('userToken');
       const response = await fetch(`${url}/rest/v1/socorrista?id=eq.${editSocorrista.id}`, {
         method: 'PATCH',
         headers: {

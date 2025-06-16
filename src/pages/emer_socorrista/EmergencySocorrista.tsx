@@ -84,7 +84,7 @@ const EmergencySocorrista: React.FC = () => {
   const fetchChamados = useCallback(async () => {
     const url = process.env.REACT_APP_SUPABASE_URL;
     const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-    const accessToken = localStorage.getItem('accessToken');
+    const accessToken = localStorage.getItem('userToken');
     
     if (!url || !serviceKey || !accessToken) return;
 
@@ -171,7 +171,7 @@ const EmergencySocorrista: React.FC = () => {
       }
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-      const accessToken = localStorage.getItem('accessToken');
+      const accessToken = localStorage.getItem('userToken');
       if (!url || !serviceKey) {
         setChamado(null);
         setLoading(false);
@@ -327,7 +327,7 @@ const EmergencySocorrista: React.FC = () => {
     
     const url = process.env.REACT_APP_SUPABASE_URL;
     const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-    const accessToken = localStorage.getItem('accessToken');
+    const accessToken = localStorage.getItem('userToken');
     
     if (!chamado || !url || !serviceKey || !accessToken) {
       console.log('[GEOLOCATION] Dados insuficientes para atualizar banco');
@@ -705,7 +705,7 @@ const EmergencySocorrista: React.FC = () => {
           
           const url = process.env.REACT_APP_SUPABASE_URL;
           const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-          const accessToken = localStorage.getItem('accessToken');
+          const accessToken = localStorage.getItem('userToken');
           
           if (chamado && url && serviceKey && accessToken) {
             try {
@@ -983,7 +983,7 @@ const EmergencySocorrista: React.FC = () => {
                     }
                     const url = process.env.REACT_APP_SUPABASE_URL;
                     const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-                    const accessToken = localStorage.getItem('accessToken');
+                    const accessToken = localStorage.getItem('userToken');
                     if (!url || !serviceKey) {
                       alert('Supabase URL ou Service Key não definidos');
                       return;
@@ -1040,7 +1040,7 @@ const EmergencySocorrista: React.FC = () => {
                     if (!chamado) return;
                     const url = process.env.REACT_APP_SUPABASE_URL;
                     const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-                    const accessToken = localStorage.getItem('accessToken');
+                    const accessToken = localStorage.getItem('userToken');
                     if (!url || !serviceKey) {
                       alert('Supabase URL ou Service Key não definidos');
                       return;

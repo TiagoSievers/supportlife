@@ -49,7 +49,7 @@ const ClientList: React.FC<ClientListProps> = ({ onEditClient }) => {
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
       if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
-      const accessToken = localStorage.getItem('accessToken');
+      const accessToken = localStorage.getItem('userToken');
       const response = await fetch(`${url}/rest/v1/cliente`, {
         method: 'GET',
         headers: {
@@ -110,7 +110,7 @@ const ClientList: React.FC<ClientListProps> = ({ onEditClient }) => {
       // PATCH para marcar como deletado
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-      const accessToken = localStorage.getItem('accessToken');
+      const accessToken = localStorage.getItem('userToken');
       if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
       const response = await fetch(`${url}/rest/v1/cliente?id=eq.${clientToDelete.id}`, {
         method: 'PATCH',

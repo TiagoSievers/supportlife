@@ -68,7 +68,7 @@ const ChamadoDialog: React.FC<ChamadoDialogProps> = ({ open, onClose, initialDat
         setLoadingChamados(false);
         return;
       }
-      const accessToken = localStorage.getItem('accessToken');
+      const accessToken = localStorage.getItem('userToken');
       fetch(`${url}/rest/v1/chamado?select=*&cliente_id=eq.${clienteId}`, {
         headers: {
           apikey: serviceKey,
