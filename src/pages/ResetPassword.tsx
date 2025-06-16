@@ -61,10 +61,6 @@ const ResetPassword: React.FC = () => {
     }
   };
 
-  const handleOpenApp = () => {
-    window.location.href = 'supportlife://login';
-  };
-
   if (showSuccess && isMobile) {
     return (
       <Container maxWidth="sm" sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', textAlign: 'center' }}>
@@ -77,20 +73,6 @@ const ResetPassword: React.FC = () => {
         <Typography variant="body1" sx={{ mb: 4, color: 'text.secondary' }}>
           Agora você pode fazer login no aplicativo com sua nova senha.
         </Typography>
-        {/* <Button 
-          variant="contained" 
-          color="primary" 
-          size="large"
-          onClick={handleOpenApp}
-          sx={{ 
-            py: 1.5, 
-            px: 4,
-            fontSize: '1.1rem',
-            borderRadius: 2
-          }}
-        >
-          Abrir Aplicativo
-        </Button> */}
       </Container>
     );
   }
