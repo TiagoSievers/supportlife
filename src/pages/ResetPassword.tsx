@@ -13,14 +13,30 @@ const ResetPassword: React.FC = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   useEffect(() => {
+    // Tenta pegar o token do Local Storage
+    const tokenData = localStorage.getItem('sb-usqozshucjsgmfgaoiad-auth-token');
+    if (tokenData) {
+      try {
+        const parsed = JSON.parse(tokenData);
+        if (parsed.access_token) {
+          setUserToken(parsed.access_token);
+          console.log('Token de acesso extraído do Local Storage:', parsed.access_token);
+          return;
+        }
+      } catch (e) {
+        console.error('Erro ao fazer parse do token do Local Storage:', e);
+      }
+    }
+
+    // Se não encontrar no Local Storage, tenta pegar da URL
     const hash = window.location.hash;
     const params = new URLSearchParams(hash.substring(1));
     const token = params.get('access_token');
     if (token) {
-      console.log('Token de acesso extraído:', token);
       setUserToken(token);
+      console.log('Token de acesso extraído da URL:', token);
     } else {
-      console.log('Token de acesso não encontrado na URL.');
+      console.log('Token de acesso não encontrado.');
     }
   }, []);
 
