@@ -77,7 +77,7 @@ const ResetPassword: React.FC = () => {
         <Typography variant="body1" sx={{ mb: 4, color: 'text.secondary' }}>
           Agora você pode fazer login no aplicativo com sua nova senha.
         </Typography>
-        <Button 
+        {/* <Button 
           variant="contained" 
           color="primary" 
           size="large"
@@ -90,7 +90,7 @@ const ResetPassword: React.FC = () => {
           }}
         >
           Abrir Aplicativo
-        </Button>
+        </Button> */}
       </Container>
     );
   }
