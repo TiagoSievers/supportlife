@@ -6,29 +6,12 @@ import { resetPassword, fetchAuthUserByToken, addUser } from '../Supabase/supaba
 const ResetPassword: React.FC = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [userToken, setUserToken] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-  useEffect(() => {
-    // Busca o token do Local Storage onde o Supabase salva o token de recuperação
-    const tokenData = localStorage.getItem('sb-usqozshucjsgmfgaoiad-auth-token');
-    if (tokenData) {
-      try {
-        const parsed = JSON.parse(tokenData);
-        if (parsed.access_token) {
-          setUserToken(parsed.access_token);
-          console.log('Token de acesso encontrado:', parsed.access_token);
-        }
-      } catch (e) {
-        console.error('Erro ao fazer parse do token do Local Storage:', e);
-      }
-    } else {
-      console.log('Token de acesso não encontrado no localStorage.');
-    }
-  }, []);
+  const userToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzU5NzcxODIxLCJzdWIiOiIyZTk5MDNmMS1hZDNkLTQzODMtOTU5Zi0xMzQ5ZDhmN2QxOTciLCJlbWFpbCI6ImF1dGhlbnRpY2F0ZWQiLCJyb2xlIjoiYXV0aGVudGljYXRlZCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzcW96c2h1Y2pzZ21mZ2FvaWFkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDI0ODQ2MjEsImV4cCI6MjAxODA2MDYyMX0.ws1bhehqnv4g";
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
