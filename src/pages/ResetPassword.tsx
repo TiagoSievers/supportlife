@@ -1,33 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { TextField, Button, Container, Typography, Box, useTheme, useMediaQuery } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 
 const ResetPassword: React.FC = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [userToken, setUserToken] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
-
-  useEffect(() => {
-    // Busca o token do Local Storage onde o Supabase salva o token de recuperação
-    const tokenData = localStorage.getItem('sb-usqozshucjsgmfgaoiad-auth-token');
-    if (tokenData) {
-      try {
-        const parsed = JSON.parse(tokenData);
-        if (parsed.access_token) {
-          setUserToken(parsed.access_token);
-          console.log('Token de acesso encontrado:', parsed.access_token);
-        }
-      } catch (e) {
-        console.error('Erro ao fazer parse do token do Local Storage:', e);
-      }
-    } else {
-      console.log('Token de acesso não encontrado no localStorage.');
-    }
-  }, []);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -35,40 +16,54 @@ const ResetPassword: React.FC = () => {
       alert('As senhas não coincidem.');
       return;
     }
+
+    const tokenData = localStorage.getItem('sb-usqozshucjsgmfgaoiad-auth-token');
+
+    if (!tokenData) {
+      alert('Token de autorização não encontrado. Por favor, tente recarregar a página a partir do link em seu e-mail.');
+      return;
+    }
+
     try {
-        // Lógica da API movida para cá
-        const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
-        const supabaseServiceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+      const parsed = JSON.parse(tokenData);
+      console.log('Objeto "parsed" do localStorage:', parsed);
 
-        if (!supabaseUrl || !supabaseServiceKey) {
-          throw new Error('Variáveis de ambiente do Supabase não definidas.');
-        }
+      if (!parsed.access_token) {
+        alert('Formato de token inválido ou token de acesso não encontrado no JSON.');
+        return;
+      }
 
-        const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
-          method: 'PUT',
-          headers: {
-            'apikey': supabaseServiceKey,
-            'Authorization': `Bearer ${userToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            password: password
-          })
-        });
-  
-        const data = await response.json();
-  
-        if (!response.ok) {
-          throw new Error(data.error_description || data.message || `Erro ${response.status}`);
-        }
-        
-        // Lógica de sucesso original
-        if (isMobile) {
-          setShowSuccess(true);
-        } else {
-          alert('Senha redefinida com sucesso!');
-          navigate('/');
-        }
+      const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+      const supabaseServiceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+
+      if (!supabaseUrl || !supabaseServiceKey) {
+        throw new Error('Variáveis de ambiente do Supabase não definidas.');
+      }
+
+      const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+        method: 'PUT',
+        headers: {
+          'apikey': supabaseServiceKey,
+          'Authorization': `Bearer ${parsed.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          password: password
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error_description || data.message || `Erro ${response.status}`);
+      }
+      
+      if (isMobile) {
+        setShowSuccess(true);
+      } else {
+        alert('Senha redefinida com sucesso!');
+        navigate('/');
+      }
     } catch (error) {
       console.error('Erro ao redefinir senha:', error);
       alert(`Erro ao redefinir senha. Por favor, tente novamente. Detalhes: ${error instanceof Error ? error.message : String(error)}`);
