@@ -1,17 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { TextField, Button, Container, Typography, Box, useTheme, useMediaQuery } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import { resetPassword, fetchAuthUserByToken, addUser } from '../Supabase/supabaseClient';
 
 const ResetPassword: React.FC = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [userToken, setUserToken] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-  const userToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzU5NzcxODIxLCJzdWIiOiIyZTk5MDNmMS1hZDNkLTQzODMtOTU5Zi0xMzQ5ZDhmN2QxOTciLCJlbWFpbCI6ImF1dGhlbnRpY2F0ZWQiLCJyb2xlIjoiYXV0aGVudGljYXRlZCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzcW96c2h1Y2pzZ21mZ2FvaWFkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDI0ODQ2MjEsImV4cCI6MjAxODA2MDYyMX0.ws1bhehqnv4g";
+  useEffect(() => {
+    // Busca o token do Local Storage onde o Supabase salva o token de recuperação
+    const tokenData = localStorage.getItem('sb-usqozshucjsgmfgaoiad-auth-token');
+    if (tokenData) {
+      try {
+        const parsed = JSON.parse(tokenData);
+        if (parsed.access_token) {
+          setUserToken(parsed.access_token);
+          console.log('Token de acesso encontrado:', parsed.access_token);
+        }
+      } catch (e) {
+        console.error('Erro ao fazer parse do token do Local Storage:', e);
+      }
+    } else {
+      console.log('Token de acesso não encontrado no localStorage.');
+    }
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -20,8 +36,33 @@ const ResetPassword: React.FC = () => {
       return;
     }
     try {
-        await resetPassword(password, userToken);
+        // Lógica da API movida para cá
+        const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+        const supabaseServiceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+
+        if (!supabaseUrl || !supabaseServiceKey) {
+          throw new Error('Variáveis de ambiente do Supabase não definidas.');
+        }
+
+        const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+          method: 'PUT',
+          headers: {
+            'apikey': supabaseServiceKey,
+            'Authorization': `Bearer ${userToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            password: password
+          })
+        });
+  
+        const data = await response.json();
+  
+        if (!response.ok) {
+          throw new Error(data.error_description || data.message || `Erro ${response.status}`);
+        }
         
+        // Lógica de sucesso original
         if (isMobile) {
           setShowSuccess(true);
         } else {
@@ -30,7 +71,7 @@ const ResetPassword: React.FC = () => {
         }
     } catch (error) {
       console.error('Erro ao redefinir senha:', error);
-      alert('Erro ao redefinir senha. Por favor, tente novamente.');
+      alert(`Erro ao redefinir senha. Por favor, tente novamente. Detalhes: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
 
