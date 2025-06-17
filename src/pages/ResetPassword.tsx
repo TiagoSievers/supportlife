@@ -33,17 +33,17 @@ const ResetPassword: React.FC = () => {
         return;
       }
 
-      const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
-      const supabaseServiceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+      const url = process.env.REACT_APP_SUPABASE_URL;
+      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
 
-      if (!supabaseUrl || !supabaseServiceKey) {
+      if (!url || !serviceKey) {
         throw new Error('Variáveis de ambiente do Supabase não definidas.');
       }
 
-      const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      const response = await fetch(`${url}/auth/v1/user`, {
         method: 'PUT',
         headers: {
-          'apikey': supabaseServiceKey,
+          'apikey': serviceKey,
           'Authorization': `Bearer ${parsed.access_token}`,
           'Content-Type': 'application/json'
         },
