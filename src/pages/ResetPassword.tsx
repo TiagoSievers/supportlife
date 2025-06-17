@@ -26,7 +26,6 @@ const ResetPassword: React.FC = () => {
 
     try {
       const parsed = JSON.parse(tokenData);
-      console.log('Objeto "parsed" do localStorage:', parsed);
 
       if (!parsed.access_token) {
         alert('Formato de token inválido ou token de acesso não encontrado no JSON.');
