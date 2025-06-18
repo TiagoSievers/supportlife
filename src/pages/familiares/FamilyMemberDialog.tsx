@@ -9,6 +9,7 @@ import {
   FormControlLabel,
   Checkbox
 } from '@mui/material';
+import InputMask from 'react-input-mask';
 import { criarFamiliar, buscarFamiliarPorEmail } from './api';
 import { recoverPassword } from '../login/api';
 
@@ -242,21 +243,25 @@ const FamilyMemberDialog: React.FC<FamilyMemberDialogProps> = ({ open, onClose, 
           onChange={handleChange}
           required
         />
-        <TextField
-          margin="dense"
-          label="Celular"
-          name="phone"
-          type="tel"
-          fullWidth
-          variant="outlined"
+        <InputMask
+          mask="(99) 99999-9999"
           value={formData.phone}
           onChange={handleChange}
-          required
-          placeholder="(99) 99999-9999"
-          inputProps={{
-            maxLength: 15
-          }}
-        />
+        >
+          {(inputProps: any) => (
+            <TextField
+              {...inputProps}
+              margin="dense"
+              label="Celular"
+              name="phone"
+              type="tel"
+              fullWidth
+              variant="outlined"
+              required
+              placeholder="(99) 99999-9999"
+            />
+          )}
+        </InputMask>
         <TextField
           margin="dense"
           label="Email"
