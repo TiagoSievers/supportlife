@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TextField, Button, Container, Typography, Box, useTheme, useMediaQuery } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 
@@ -9,6 +9,22 @@ const ResetPassword: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
+  // Verificar e corrigir a URL se necessário
+  useEffect(() => {
+    const currentPath = window.location.pathname;
+    const currentSearch = window.location.search;
+    const currentHash = window.location.hash;
+    
+    // Verifica se o path termina com 'reset-password' sem a barra inicial
+    if (currentPath.endsWith('reset-password') && !currentPath.endsWith('/reset-password')) {
+      const correctedPath = currentPath.replace(/reset-password$/, '/reset-password');
+      const newUrl = correctedPath + currentSearch + currentHash;
+      
+      // Substitui a URL atual sem adicionar uma nova entrada no histórico
+      window.history.replaceState(null, '', newUrl);
+    }
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -54,7 +70,8 @@ const ResetPassword: React.FC = () => {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error_description || data.message || `Erro ${response.status}`);
+        console.error('Resposta de erro da API Supabase:', data);
+        throw new Error(data.message || data.error_description || `Erro ${response.status}`);
       }
       
       if (isMobile) {
@@ -65,7 +82,22 @@ const ResetPassword: React.FC = () => {
       }
     } catch (error) {
       console.error('Erro ao redefinir senha:', error);
-      alert(`Erro ao redefinir senha. Por favor, tente novamente. Detalhes: ${error instanceof Error ? error.message : String(error)}`);
+
+      let userMessage = 'Ocorreu um erro inesperado. Por favor, tente novamente.';
+
+      if (error instanceof Error) {
+        const errorMessage = error.message.toLowerCase();
+        
+        if (errorMessage.includes('422') || errorMessage.includes('password should be at least')) {
+          userMessage = 'A senha fornecida é muito fraca. Por favor, use uma senha com pelo menos 6 caracteres.';
+        } else if (errorMessage.includes('401')) {
+          userMessage = 'Seu link de redefinição é inválido ou expirou. Por favor, solicite um novo.';
+        } else {
+          userMessage = error.message;
+        }
+      }
+
+      alert(userMessage);
     }
   };
 

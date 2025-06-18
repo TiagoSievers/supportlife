@@ -54,7 +54,7 @@ const EmergencyFamily: React.FC = () => {
       }
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-      const accessToken = localStorage.getItem('userToken');
+      const accessToken = localStorage.getItem('accessToken');
       if (!url || !serviceKey) {
         setChamado(null);
         setLoading(false);
@@ -600,7 +600,7 @@ const EmergencyFamily: React.FC = () => {
                     if (!chamado) return;
                     const url = process.env.REACT_APP_SUPABASE_URL;
                     const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-                    const accessToken = localStorage.getItem('userToken');
+                    const accessToken = localStorage.getItem('accessToken');
                     if (!url || !serviceKey) {
                       alert('Supabase URL ou Service Key não definidos');
                       return;

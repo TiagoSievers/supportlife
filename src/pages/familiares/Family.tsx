@@ -30,115 +30,107 @@ const Family: React.FC = () => {
   };
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
-        const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-        const accessToken = localStorage.getItem('userToken');
-        const clienteId = localStorage.getItem('clienteId');
-        if (!supabaseUrl || !serviceKey || !accessToken || !clienteId) {
-          throw new Error('Configuração do Supabase ou autenticação ausente');
-        }
-        const response = await fetch(`${supabaseUrl}/rest/v1/familiares?cliente_id=eq.${clienteId}&order=data_cadastro.desc`, {
-          method: 'GET',
-          headers: {
-            'apikey': serviceKey,
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-            'Prefer': 'return=representation'
-          }
-        });
-        const familiares = await response.json();
-        if (!response.ok) {
-          throw new Error(familiares.error_description || familiares.message || `Erro ${response.status}`);
-        }
-        console.log('[Family] Familiares encontrados:', familiares);
-        const members = familiares
-          .filter((f: any) => !f.deletado)
-          .map((f: any) => ({
-            id: f.id,
-            name: f.nome,
-            relationship: f.parentesco,
-            phone: f.telefone,
-            email: f.email,
-            isEmergencyContact: f.contato_emergencia
-          }));
-        setFamilyMembers(members);
-      } catch (error) {
-        console.error('Erro ao buscar familiares:', error);
-      }
-    };
-    fetchData();
-    // Realtime subscription para familiares
-    const channel = supabase
-      .channel('public:familiares')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'familiares' },
-        (payload) => {
-          fetchData();
-        }
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    fetchFamilyMembers();
   }, []);
+
+  const fetchFamilyMembers = async () => {
+    try {
+      const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+      const accessToken = localStorage.getItem('accessToken');
+      const clienteId = localStorage.getItem('clienteId');
+      
+      if (!supabaseUrl || !serviceKey || !accessToken || !clienteId) {
+        throw new Error('Configuração do Supabase ou autenticação ausente');
+      }
+
+      const response = await fetch(`${supabaseUrl}/rest/v1/familiares?cliente_id=eq.${clienteId}&order=data_cadastro.desc`, {
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Erro ao buscar familiares');
+      }
+
+      const data = await response.json();
+      const familiaresAtivos = data
+        .filter((f: any) => !f.deletado)
+        .map((f: any) => ({
+          id: f.id,
+          name: f.nome,
+          relationship: f.parentesco,
+          phone: f.telefone,
+          email: f.email,
+          isEmergencyContact: f.contato_emergencia || false
+        }));
+
+      setFamilyMembers(familiaresAtivos);
+    } catch (error) {
+      console.error('Erro ao buscar familiares:', error);
+      alert('Erro ao carregar familiares. Por favor, tente novamente.');
+    }
+  };
 
   const handleOpenDialog = (member?: FamilyMember) => {
     if (member) {
+      console.log('[Family] Editando familiar:', member);
       setSelectedMember(member);
       setIsEditing(true);
     } else {
-      setSelectedMember({
-        ...emptyMember,
-        id: `temp-${Date.now().toString()}`,
-      });
+      console.log('[Family] Criando novo familiar');
+      setSelectedMember(emptyMember);
       setIsEditing(false);
     }
     setOpenDialog(true);
   };
 
   const handleCloseDialog = () => {
+    console.log('[Family] Fechando diálogo');
     setOpenDialog(false);
     setSelectedMember(null);
     setIsEditing(false);
   };
 
-  const handleSave = (member: FamilyMember) => {
-    setFamilyMembers(prev => {
-      const exists = prev.some(item => item.id === member.id);
-      if (exists) {
-        // Atualiza o membro existente
-        return prev.map(item => item.id === member.id ? member : item);
-      }
-      // Adiciona novo membro
-      return [...prev, member];
+  const handleSave = async (member: FamilyMember) => {
+    console.log('[Family] Salvando familiar:', {
+      member,
+      isEditing: isEditing
     });
-    handleCloseDialog();
+    try {
+      await fetchFamilyMembers();
+      handleCloseDialog();
+    } catch (error) {
+      console.error('Erro ao salvar familiar:', error);
+      alert('Erro ao salvar familiar. Por favor, tente novamente.');
+    }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (member: FamilyMember) => {
     try {
-      await marcarFamiliarComoDeletado(id);
-      setFamilyMembers(prev => prev.filter(member => member.id !== id));
-    } catch (error: any) {
-      alert('Erro ao marcar familiar como deletado: ' + error.message);
+      await marcarFamiliarComoDeletado(member.id);
+      await fetchFamilyMembers();
+    } catch (error) {
+      console.error('Erro ao deletar familiar:', error);
+      alert('Erro ao deletar familiar. Por favor, tente novamente.');
     }
   };
 
   return (
     <Box sx={{ bgcolor: 'grey.100', minHeight: '100vh', py: 4 }}>
       <Container maxWidth="lg">
-        <Typography variant="h4" component="h1" gutterBottom sx={{ mb: 4, color: 'primary.main' }}>
+        <Box component="h1" sx={{ typography: 'h4', mb: 4, color: 'primary.main' }}>
           Familiares e Contatos de Emergência
-        </Typography>
+        </Box>
 
         <Paper elevation={2} sx={{ p: 3, mb: 3 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-            <Typography variant="h6">
+            <Box component="h2" sx={{ typography: 'h6' }}>
               Lista de Familiares
-            </Typography>
+            </Box>
             <Button
               variant="contained"
               color="primary"
@@ -168,15 +160,13 @@ const Family: React.FC = () => {
           </Link>
         </Box>
 
-        {selectedMember && (
-          <FamilyMemberDialog
-            open={openDialog}
-            onClose={handleCloseDialog}
-            onSave={handleSave}
-            initialData={selectedMember}
-            isEditing={isEditing}
-          />
-        )}
+        <FamilyMemberDialog
+          open={openDialog}
+          onClose={handleCloseDialog}
+          onSave={handleSave}
+          initialData={selectedMember || undefined}
+          isEditing={isEditing}
+        />
       </Container>
     </Box>
   );

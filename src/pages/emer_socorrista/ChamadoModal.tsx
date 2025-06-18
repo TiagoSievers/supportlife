@@ -144,7 +144,7 @@ const ChamadoModal: React.FC<ChamadoModalProps> = ({ open, chamado, onClose, onF
     try {
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-      const accessToken = localStorage.getItem('userToken');
+      const accessToken = localStorage.getItem('accessToken');
       if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
       if (!accessToken) throw new Error('Token de acesso não encontrado no localStorage');
 

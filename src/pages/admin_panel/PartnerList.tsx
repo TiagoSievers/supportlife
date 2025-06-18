@@ -51,20 +51,17 @@ const PartnerList: React.FC = () => {
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
       if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
-      const accessToken = localStorage.getItem('userToken');
+      const accessToken = localStorage.getItem('accessToken');
       const response = await fetch(`${url}/rest/v1/socorrista`, {
         method: 'GET',
         headers: {
           'apikey': serviceKey,
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json'
-        } as HeadersInit
+        }
       });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error_description || data.message || `Erro ${response.status}`);
-      }
-      const data = await response.json();
+      let data = await response.json();
+      if (!response.ok) throw new Error(data.error_description || data.message || `Erro ${response.status}`);
       data.sort((a: SocorristaParams, b: SocorristaParams) => {
         if (a.criado_em && b.criado_em) {
           return new Date(b.criado_em).getTime() - new Date(a.criado_em).getTime();
@@ -109,7 +106,7 @@ const PartnerList: React.FC = () => {
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
       if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
-      const accessToken = localStorage.getItem('userToken');
+      const accessToken = localStorage.getItem('accessToken');
       const response = await fetch(`${url}/rest/v1/socorrista?id=eq.${editSocorrista.id}`, {
         method: 'PATCH',
         headers: {

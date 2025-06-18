@@ -42,11 +42,9 @@ const EmergencySocorrista: React.FC = () => {
   const [trackingAtivo, setTrackingAtivo] = useState(false);
   const [watchId, setWatchId] = useState<number | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
+  const lastSoundPlay = useRef<number>(0);
+  const MIN_SOUND_INTERVAL = 5000; // 5 segundos entre sons
   const navigate = useNavigate();
-
-  // Estados para notificação sonora
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const lastMaxIdRef = useRef<number>(0);
 
   // Rate limiting para API OSRM - mesmo sistema do EmergencyFamily
   const lastOSRMCall = useRef<number>(0);
@@ -55,110 +53,6 @@ const EmergencySocorrista: React.FC = () => {
   const lastSocorristaPos = useRef<{ lat: number; lng: number } | null>(null); // Para evitar loops
   const lastDBUpdate = useRef<number>(0); // Controle de atualizações do banco
   const MIN_DB_UPDATE_INTERVAL = 8000; // 8 segundos entre atualizações do banco
-
-  // Inicializar áudio para notificações
-  useEffect(() => {
-    audioRef.current = new Audio('/assets/notification.mp3');
-    // Inicializa o lastMaxIdRef com 0
-    lastMaxIdRef.current = 0;
-
-    // Desbloqueia o áudio no primeiro clique do usuário
-    const unlockAudio = () => {
-      if (audioRef.current) {
-        audioRef.current.volume = 0;
-        audioRef.current.play().catch(() => {});
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-        audioRef.current.volume = 1;
-      }
-      window.removeEventListener('click', unlockAudio);
-    };
-    window.addEventListener('click', unlockAudio);
-    
-    return () => {
-      window.removeEventListener('click', unlockAudio);
-    };
-  }, []);
-
-  // Função para buscar todos os chamados e detectar novos
-  const fetchChamados = useCallback(async () => {
-    const url = process.env.REACT_APP_SUPABASE_URL;
-    const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-    const accessToken = localStorage.getItem('userToken');
-    
-    if (!url || !serviceKey || !accessToken) return;
-
-    try {
-      const response = await fetch(`${url}/rest/v1/chamado`, {
-        method: 'GET',
-        headers: {
-          'apikey': serviceKey,
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      const data = await response.json();
-      if (!response.ok) return;
-
-      // Ordenar por data_abertura decrescente
-      data.sort((a: any, b: any) => {
-        if (a.data_abertura && b.data_abertura) {
-          return new Date(b.data_abertura).getTime() - new Date(a.data_abertura).getTime();
-        }
-        return (b.id || 0) - (a.id || 0);
-      });
-
-      // Detecta novo chamado
-      const maxId = data.length > 0 ? Math.max(...data.map((c: any) => c.id || 0)) : 0;
-      if (lastMaxIdRef.current && maxId > lastMaxIdRef.current) {
-        // Novo chamado detectado
-        if (audioRef.current) {
-          audioRef.current.currentTime = 0;
-          audioRef.current.play();
-        }
-        console.log('[SOCORRISTA] Novo chamado detectado - som tocado');
-      }
-      lastMaxIdRef.current = maxId;
-
-    } catch (error) {
-      console.error('[SOCORRISTA] Erro ao buscar chamados:', error);
-    }
-  }, []);
-
-  // Monitorar novos chamados via realtime
-  useEffect(() => {
-    // Busca inicial para estabelecer baseline
-    fetchChamados();
-
-    // Subscription para novos chamados (INSERT)
-    const channel = supabase
-      .channel('public:chamado-socorrista')
-      .on('postgres_changes', 
-        { 
-          event: 'INSERT', 
-          schema: 'public', 
-          table: 'chamado'
-        }, 
-        (payload) => {
-          console.log('[REALTIME SOCORRISTA] Novo chamado detectado:', payload);
-          
-          // Toca o som imediatamente
-          if (audioRef.current) {
-            audioRef.current.currentTime = 0;
-            audioRef.current.play();
-          }
-          
-          // Atualiza a lista de chamados
-          fetchChamados();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [fetchChamados]);
 
   useEffect(() => {
     // Buscar chamado real pelo id salvo no localStorage
@@ -171,7 +65,7 @@ const EmergencySocorrista: React.FC = () => {
       }
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-      const accessToken = localStorage.getItem('userToken');
+      const accessToken = localStorage.getItem('accessToken');
       if (!url || !serviceKey) {
         setChamado(null);
         setLoading(false);
@@ -231,10 +125,23 @@ const EmergencySocorrista: React.FC = () => {
           event: 'UPDATE', 
           schema: 'public', 
           table: 'chamado',
-          filter: `id=eq.${chamadoId}`
+          filter: `id=eq.${chamadoId}` // Removendo o filtro de status aqui para debugar
         }, 
         (payload) => {
           console.log('[REALTIME] Mudança detectada no chamado:', payload);
+          console.log('[REALTIME] Status do chamado:', payload.new?.status); // Log adicional para debug
+          
+          // Tocar o som para qualquer atualização do chamado por enquanto
+          const now = Date.now();
+          if (now - lastSoundPlay.current >= MIN_SOUND_INTERVAL) {
+            console.log('[REALTIME] Tentando tocar som de notificação'); // Log adicional para debug
+            const audio = new Audio('/assets/notification.mp3');
+            audio.play().catch(error => {
+              console.error('[REALTIME] Erro ao tocar som:', error);
+            });
+            lastSoundPlay.current = now;
+          }
+          
           if (payload.new && payload.new.posicao_inicial_socorrista) {
             console.log('[REALTIME] Nova posição do socorrista:', payload.new.posicao_inicial_socorrista);
             
@@ -327,7 +234,7 @@ const EmergencySocorrista: React.FC = () => {
     
     const url = process.env.REACT_APP_SUPABASE_URL;
     const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-    const accessToken = localStorage.getItem('userToken');
+    const accessToken = localStorage.getItem('accessToken');
     
     if (!chamado || !url || !serviceKey || !accessToken) {
       console.log('[GEOLOCATION] Dados insuficientes para atualizar banco');
@@ -705,7 +612,7 @@ const EmergencySocorrista: React.FC = () => {
           
           const url = process.env.REACT_APP_SUPABASE_URL;
           const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-          const accessToken = localStorage.getItem('userToken');
+          const accessToken = localStorage.getItem('accessToken');
           
           if (chamado && url && serviceKey && accessToken) {
             try {
@@ -983,7 +890,7 @@ const EmergencySocorrista: React.FC = () => {
                     }
                     const url = process.env.REACT_APP_SUPABASE_URL;
                     const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-                    const accessToken = localStorage.getItem('userToken');
+                    const accessToken = localStorage.getItem('accessToken');
                     if (!url || !serviceKey) {
                       alert('Supabase URL ou Service Key não definidos');
                       return;
@@ -1008,6 +915,43 @@ const EmergencySocorrista: React.FC = () => {
                         const data = await response.json();
                         throw new Error(data.error_description || data.message || `Erro ${response.status}`);
                       }
+
+                      // Buscar dados atualizados do chamado para o log
+                      const chamadoResp = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
+                        headers: {
+                          'apikey': serviceKey,
+                          'Authorization': `Bearer ${accessToken}`,
+                          'Content-Type': 'application/json'
+                        }
+                      });
+                      const chamadoData = await chamadoResp.json();
+                      if (chamadoData && chamadoData[0]) {
+                        const logData = {
+                          chamado_id: chamadoData[0].id,
+                          cliente_id: chamadoData[0].cliente_id,
+                          localizacao: chamadoData[0].localizacao,
+                          endereco_textual: chamadoData[0].endereco_textual,
+                          status: chamadoData[0].status,
+                          operador_id: chamadoData[0].operador_id,
+                          socorrista_id: chamadoData[0].socorrista_id,
+                          data_abertura: chamadoData[0].data_abertura,
+                          data_fechamento: chamadoData[0].data_fechamento,
+                          descricao: chamadoData[0].descricao,
+                          prioridade: chamadoData[0].prioridade,
+                          notificacao_familiares: chamadoData[0].notificacao_familiares,
+                          posicao_inicial_socorrista: chamadoData[0].posicao_inicial_socorrista
+                        };
+                        await fetch(`${url}/rest/v1/log_chamado`, {
+                          method: 'POST',
+                          headers: {
+                            'apikey': serviceKey,
+                            'Authorization': `Bearer ${accessToken}`,
+                            'Content-Type': 'application/json'
+                          },
+                          body: JSON.stringify(logData)
+                        });
+                      }
+
                       setChegou(true);
                     } catch (err: any) {
                       alert('Erro ao atualizar status: ' + (err.message || err));
@@ -1040,7 +984,7 @@ const EmergencySocorrista: React.FC = () => {
                     if (!chamado) return;
                     const url = process.env.REACT_APP_SUPABASE_URL;
                     const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-                    const accessToken = localStorage.getItem('userToken');
+                    const accessToken = localStorage.getItem('accessToken');
                     if (!url || !serviceKey) {
                       alert('Supabase URL ou Service Key não definidos');
                       return;
@@ -1065,6 +1009,46 @@ const EmergencySocorrista: React.FC = () => {
                         const data = await response.json();
                         throw new Error(data.error_description || data.message || `Erro ${response.status}`);
                       }
+
+                      // Buscar dados atualizados do chamado para o log
+                      const chamadoResp = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
+                        headers: {
+                          'apikey': serviceKey,
+                          'Authorization': `Bearer ${accessToken}`,
+                          'Content-Type': 'application/json'
+                        }
+                      });
+                      const chamadoData = await chamadoResp.json();
+                      if (chamadoData && chamadoData[0]) {
+                        const logData = {
+                          chamado_id: chamadoData[0].id,
+                          cliente_id: chamadoData[0].cliente_id,
+                          localizacao: chamadoData[0].localizacao,
+                          endereco_textual: chamadoData[0].endereco_textual,
+                          status: chamadoData[0].status,
+                          operador_id: chamadoData[0].operador_id,
+                          socorrista_id: chamadoData[0].socorrista_id,
+                          data_abertura: chamadoData[0].data_abertura,
+                          data_fechamento: chamadoData[0].data_fechamento,
+                          descricao: chamadoData[0].descricao,
+                          prioridade: chamadoData[0].prioridade,
+                          notificacao_familiares: chamadoData[0].notificacao_familiares,
+                          posicao_inicial_socorrista: chamadoData[0].posicao_inicial_socorrista
+                        };
+                        await fetch(`${url}/rest/v1/log_chamado`, {
+                          method: 'POST',
+                          headers: {
+                            'apikey': serviceKey,
+                            'Authorization': `Bearer ${accessToken}`,
+                            'Content-Type': 'application/json'
+                          },
+                          body: JSON.stringify(logData)
+                        });
+                      }
+
+                      // Limpar localStorage e redirecionar
+                      localStorage.removeItem('chamadoId');
+                      console.clear(); // Limpa o console
                       navigate('/partner-emergencies');
                     } catch (err: any) {
                       alert('Erro ao concluir chamado: ' + (err.message || err));

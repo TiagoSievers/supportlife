@@ -105,7 +105,7 @@ export type FamiliarParams = {
 // Cria um novo familiar
 export async function criarFamiliar({ user_id, cliente_id, nome, parentesco, telefone, email }: FamiliarParams): Promise<boolean> {
   const body = { user_id, cliente_id, nome, parentesco, telefone, email };
-  const accessToken = localStorage.getItem('userToken');
+  const accessToken = localStorage.getItem('accessToken');
   const response = await fetch(`${url}/rest/v1/familiares`, {
     method: 'POST',
     headers: {
@@ -125,11 +125,12 @@ export async function criarFamiliar({ user_id, cliente_id, nome, parentesco, tel
 
 // Busca todos os familiares
 export async function buscarFamiliares(): Promise<FamiliarParams[]> {
+  const accessToken = localStorage.getItem('accessToken');
   const response = await fetch(`${url}/rest/v1/familiares`, {
     method: 'GET',
     headers: {
       'apikey': serviceKey as string,
-      'Authorization': `Bearer ${serviceKey}`,
+      'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json'
     } as HeadersInit
   });
@@ -143,11 +144,12 @@ export async function buscarFamiliares(): Promise<FamiliarParams[]> {
 
 // Atualiza um familiar existente
 export async function updateFamiliar(id: number, updates: { nome?: string; email?: string; telefone?: string; parentesco?: string }) {
+  const accessToken = localStorage.getItem('accessToken');
   const response = await fetch(`${url}/rest/v1/familiares?id=eq.${id}`, {
     method: 'PATCH',
     headers: {
       'apikey': serviceKey as string,
-      'Authorization': `Bearer ${serviceKey}`,
+      'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       'Prefer': 'return=representation'
     } as HeadersInit,
@@ -162,11 +164,12 @@ export async function updateFamiliar(id: number, updates: { nome?: string; email
 
 // Remove um familiar pelo id
 export async function deleteFamiliar(id: number) {
+  const accessToken = localStorage.getItem('accessToken');
   const response = await fetch(`${url}/rest/v1/familiares?id=eq.${id}`, {
     method: 'DELETE',
     headers: {
       'apikey': serviceKey as string,
-      'Authorization': `Bearer ${serviceKey}`,
+      'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       'Prefer': 'return=minimal'
     } as HeadersInit
@@ -181,12 +184,13 @@ export async function deleteFamiliar(id: number) {
 export async function atualizarFamiliar(id: string, dados: any) {
   const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
   const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-  if (!supabaseUrl || !serviceKey) throw new Error('Configuração do Supabase ausente');
+  const accessToken = localStorage.getItem('accessToken');
+  if (!supabaseUrl || !serviceKey || !accessToken) throw new Error('Configuração do Supabase ou autenticação ausente');
   const response = await fetch(`${supabaseUrl}/rest/v1/familiares?id=eq.${id}`, {
     method: 'PATCH',
     headers: {
       'apikey': serviceKey,
-      'Authorization': `Bearer ${serviceKey}`,
+      'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       'Prefer': 'return=representation'
     },
@@ -200,12 +204,13 @@ export async function atualizarFamiliar(id: string, dados: any) {
 export async function marcarFamiliarComoDeletado(id: string) {
   const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
   const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-  if (!supabaseUrl || !serviceKey) throw new Error('Configuração do Supabase ausente');
+  const accessToken = localStorage.getItem('accessToken');
+  if (!supabaseUrl || !serviceKey || !accessToken) throw new Error('Configuração do Supabase ou autenticação ausente');
   const response = await fetch(`${supabaseUrl}/rest/v1/familiares?id=eq.${id}`, {
     method: 'PATCH',
     headers: {
       'apikey': serviceKey,
-      'Authorization': `Bearer ${serviceKey}`,
+      'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       'Prefer': 'return=representation'
     },
@@ -218,11 +223,12 @@ export async function marcarFamiliarComoDeletado(id: string) {
 
 // Busca chamados onde notificacao_familiares contém o id do familiar
 export async function buscarChamadosPorFamiliarId(familiarId: string) {
+  const accessToken = localStorage.getItem('accessToken');
   const response = await fetch(`${url}/rest/v1/chamado?notificacao_familiares=cs.[{"id":"${familiarId}"}]`, {
     method: 'GET',
     headers: {
       'apikey': serviceKey as string,
-      'Authorization': `Bearer ${serviceKey}`,
+      'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     } as HeadersInit,
   });
@@ -234,11 +240,12 @@ export async function buscarChamadosPorFamiliarId(familiarId: string) {
 }
 
 export async function buscarFamiliarPorEmail(email: string) {
+  const accessToken = localStorage.getItem('accessToken');
   const response = await fetch(`${url}/rest/v1/familiares?email=eq.${encodeURIComponent(email)}`, {
     method: 'GET',
     headers: {
       'apikey': serviceKey as string,
-      'Authorization': `Bearer ${serviceKey}`,
+      'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
     } as HeadersInit,
   });

@@ -34,20 +34,17 @@ const AdminUserList: React.FC = () => {
         const url = process.env.REACT_APP_SUPABASE_URL;
         const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
         if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
-        const accessToken = localStorage.getItem('userToken');
+        const accessToken = localStorage.getItem('accessToken');
         const response = await fetch(`${url}/rest/v1/administrador?deletado=is.false`, {
           method: 'GET',
           headers: {
             'apikey': serviceKey,
             'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json'
-          } as HeadersInit
+          }
         });
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error_description || data.message || `Erro ${response.status}`);
-        }
-        const data = await response.json();
+        let data = await response.json();
+        if (!response.ok) throw new Error(data.error_description || data.message || `Erro ${response.status}`);
         data.sort((a: UsuarioAdmin, b: UsuarioAdmin) => {
           if ((a as any).data_cadastro && (b as any).data_cadastro) {
             return new Date((b as any).data_cadastro).getTime() - new Date((a as any).data_cadastro).getTime();
@@ -93,7 +90,7 @@ const AdminUserList: React.FC = () => {
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
       if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
-      const accessToken = localStorage.getItem('userToken');
+      const accessToken = localStorage.getItem('accessToken');
       const response = await fetch(`${url}/rest/v1/administrador?id=eq.${userToDelete.id}`, {
         method: 'PATCH',
         headers: {
@@ -132,7 +129,7 @@ const AdminUserList: React.FC = () => {
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
       if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
-      const accessToken = localStorage.getItem('userToken');
+      const accessToken = localStorage.getItem('accessToken');
       const response = await fetch(`${url}/rest/v1/administrador?id=eq.${editUsuario.id}`, {
         method: 'PATCH',
         headers: {

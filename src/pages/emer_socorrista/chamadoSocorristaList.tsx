@@ -60,15 +60,7 @@ const ChamadoSocorristaList: React.FC<ChamadoSocorristaListProps> = ({ onNewCham
         return (b.id || 0) - (a.id || 0);
       });
 
-      // Detecta novo chamado na lista filtrada
-      if (data.length > prevChamadosCount.current) {
-        if (audioRef.current) {
-          audioRef.current.currentTime = 0;
-          audioRef.current.play().catch(() => {});
-        }
-        if (onNewChamado) onNewChamado();
-        console.log('[SOCORRISTA LIST] Novo chamado detectado - notificação ativada');
-      }
+      // Apenas atualiza o contador, sem trigger de som ou callback
       prevChamadosCount.current = data.length;
 
       setChamados(data);
@@ -81,29 +73,6 @@ const ChamadoSocorristaList: React.FC<ChamadoSocorristaListProps> = ({ onNewCham
   };
 
   useEffect(() => {
-    audioRef.current = new Audio('/assets/notification.mp3');
-    // Inicializa o lastMaxIdRef com 0
-    prevChamadosCount.current = 0;
-
-    // Desbloqueia o áudio no primeiro clique do usuário
-    const unlockAudio = () => {
-      if (audioRef.current) {
-        audioRef.current.volume = 0;
-        audioRef.current.play().catch(() => {});
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-        audioRef.current.volume = 1;
-      }
-      window.removeEventListener('click', unlockAudio);
-    };
-    window.addEventListener('click', unlockAudio);
-    
-    return () => {
-      window.removeEventListener('click', unlockAudio);
-    };
-  }, []);
-
-  useEffect(() => {
     fetchChamados();
     // Realtime subscription
     const channel = supabase
@@ -112,17 +81,6 @@ const ChamadoSocorristaList: React.FC<ChamadoSocorristaListProps> = ({ onNewCham
         console.log('[REALTIME SOCORRISTA LIST] Evento detectado:', payload);
         // Sempre recarrega a lista filtrada, nunca adiciona manualmente o chamado
         fetchChamados();
-        // Notificação sonora e callback só se for INSERT
-        if (payload.eventType === 'INSERT') {
-          if (audioRef.current) {
-            audioRef.current.currentTime = 0;
-            audioRef.current.play().catch(() => {});
-          }
-          if (onNewChamado) {
-            onNewChamado();
-            console.log('[REALTIME SOCORRISTA LIST] onNewChamado chamado');
-          }
-        }
       })
       .subscribe();
     return () => {
@@ -131,7 +89,53 @@ const ChamadoSocorristaList: React.FC<ChamadoSocorristaListProps> = ({ onNewCham
     // eslint-disable-next-line
   }, [onNewChamado]);
 
-  const handleVisualizar = (chamado: Chamado) => {
+  const handleVisualizar = async (chamado: Chamado) => {
+    try {
+      const url = process.env.REACT_APP_SUPABASE_URL;
+      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+      const accessToken = localStorage.getItem('accessToken');
+      if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
+      if (!accessToken) throw new Error('accessToken não encontrado no localStorage');
+
+      // Buscar dados atualizados do chamado para o log
+      const chamadoResp = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      const chamadoData = await chamadoResp.json();
+      if (chamadoData && chamadoData[0]) {
+        const logData = {
+          chamado_id: chamadoData[0].id,
+          cliente_id: chamadoData[0].cliente_id,
+          localizacao: chamadoData[0].localizacao,
+          endereco_textual: chamadoData[0].endereco_textual,
+          status: "Visualizado",
+          operador_id: chamadoData[0].operador_id,
+          socorrista_id: localStorage.getItem('socorristaId'),
+          data_abertura: chamadoData[0].data_abertura,
+          data_fechamento: chamadoData[0].data_fechamento,
+          descricao: chamadoData[0].descricao,
+          prioridade: chamadoData[0].prioridade,
+          notificacao_familiares: chamadoData[0].notificacao_familiares,
+          posicao_inicial_socorrista: chamadoData[0].posicao_inicial_socorrista
+        };
+        await fetch(`${url}/rest/v1/log_chamado`, {
+          method: 'POST',
+          headers: {
+            'apikey': serviceKey,
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(logData)
+        });
+      }
+    } catch (err) {
+      console.error('Erro ao criar log de visualização:', err);
+    }
+
     setSelectedChamado(chamado);
     setModalOpen(true);
   };
@@ -148,6 +152,8 @@ const ChamadoSocorristaList: React.FC<ChamadoSocorristaListProps> = ({ onNewCham
       const accessToken = localStorage.getItem('accessToken');
       if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
       if (!accessToken) throw new Error('accessToken não encontrado no localStorage');
+      
+      // Atualizar status para finalizado
       const response = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
         method: 'PATCH',
         headers: {
@@ -162,6 +168,43 @@ const ChamadoSocorristaList: React.FC<ChamadoSocorristaListProps> = ({ onNewCham
         const data = await response.json();
         throw new Error(data.error_description || data.message || `Erro ${response.status}`);
       }
+
+      // Buscar dados atualizados do chamado para o log
+      const chamadoResp = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      const chamadoData = await chamadoResp.json();
+      if (chamadoData && chamadoData[0]) {
+        const logData = {
+          chamado_id: chamadoData[0].id,
+          cliente_id: chamadoData[0].cliente_id,
+          localizacao: chamadoData[0].localizacao,
+          endereco_textual: chamadoData[0].endereco_textual,
+          status: "Visualizado",
+          operador_id: chamadoData[0].operador_id,
+          socorrista_id: localStorage.getItem('socorristaId'),
+          data_abertura: chamadoData[0].data_abertura,
+          data_fechamento: chamadoData[0].data_fechamento,
+          descricao: chamadoData[0].descricao,
+          prioridade: chamadoData[0].prioridade,
+          notificacao_familiares: chamadoData[0].notificacao_familiares,
+          posicao_inicial_socorrista: chamadoData[0].posicao_inicial_socorrista
+        };
+        await fetch(`${url}/rest/v1/log_chamado`, {
+          method: 'POST',
+          headers: {
+            'apikey': serviceKey,
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(logData)
+        });
+      }
+
       fetchChamados();
     } catch (err) {
       alert('Erro ao finalizar chamado.');
@@ -200,7 +243,7 @@ const ChamadoSocorristaList: React.FC<ChamadoSocorristaListProps> = ({ onNewCham
                   >
                     Visualizar
                   </Button>
-                  <Button size="small" color="error" onClick={() => handleRecusar(c)} sx={{ ml: 1 }}>Recusar</Button>
+                  <Button size="small" color="error" onClick={() => handleRecusar(c)} sx={{ ml: 1, display: 'none' }}>Recusar</Button>
                 </span>
               </Box>
             </Paper>
