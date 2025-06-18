@@ -21,7 +21,97 @@ import {
   InputLabel, 
   FormControl 
 } from '@mui/material';
-import InputMask from 'react-input-mask';
+
+// Configurações do Supabase
+const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
+const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+const serviceRoleKey = process.env.REACT_APP_SUPABASE_SERVICE_ROLE_KEY;
+
+// Função para enviar convite
+async function sendInvite(email: string) {
+  if (!supabaseUrl || !serviceKey || !serviceRoleKey) {
+    throw new Error('Variáveis de ambiente do Supabase não definidas');
+  }
+  const response = await fetch(`${supabaseUrl}/auth/v1/invite`, {
+    method: 'POST',
+    headers: {
+      'apikey': serviceKey,
+      'Authorization': `Bearer ${serviceRoleKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ email })
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error_description || data.message || `Erro ${response.status}`);
+  }
+  return data;
+}
+
+// Função para criar administrador
+async function criarAdminUser({ user_id, nome, email, status = 'Ativo', perfil }: {
+  user_id: string;
+  nome: string;
+  email: string;
+  status?: string;
+  perfil?: string;
+}): Promise<boolean> {
+  if (!supabaseUrl || !serviceKey) {
+    throw new Error('Variáveis de ambiente do Supabase não definidas');
+  }
+  const body = { user_id, nome, email, status, perfil };
+  const response = await fetch(`${supabaseUrl}/rest/v1/administrador`, {
+    method: 'POST',
+    headers: {
+      'apikey': serviceKey,
+      'Authorization': `Bearer ${serviceKey}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=minimal'
+    },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error_description || data.message || `Erro ${response.status}`);
+  }
+  return true;
+}
+
+// Função para recuperação de senha
+async function recoverPassword(email: string) {
+  if (!supabaseUrl || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou SERVICE_KEY não definida no .env');
+  const response = await fetch(`${supabaseUrl}/auth/v1/recover`, {
+    method: 'POST',
+    headers: {
+      'apikey': serviceKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ email }),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error_description || data.message || `Erro ${response.status}`);
+  }
+  return data;
+}
+
+// Função para verificar se o administrador existe
+async function verificarAdminExistente(email: string) {
+  if (!supabaseUrl || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou SERVICE_KEY não definida no .env');
+  const response = await fetch(`${supabaseUrl}/rest/v1/administrador?email=eq.${encodeURIComponent(email)}`, {
+    method: 'GET',
+    headers: {
+      'apikey': serviceKey,
+      'Authorization': `Bearer ${serviceKey}`,
+      'Content-Type': 'application/json'
+    }
+  });
+  if (!response.ok) {
+    throw new Error('Erro ao verificar administrador existente');
+  }
+  const data = await response.json();
+  return data[0] || null;
+}
 
 interface AddUserAdminDialogProps {
   open: boolean;
@@ -30,9 +120,8 @@ interface AddUserAdminDialogProps {
     nome: string;
     email: string;
     perfil?: string;
-    telefone?: string;
   };
-  onSave?: (data: { nome: string; email: string; perfil: string; telefone: string }) => Promise<void>;
+  onSave?: (data: { nome: string; email: string; perfil: string; }) => Promise<void>;
   atualizarLista?: () => void;
 }
 
@@ -40,73 +129,72 @@ const AddUserAdminDialog: React.FC<AddUserAdminDialogProps> = ({ open, onClose, 
   const [nome, setNome] = useState(initialData?.nome || '');
   const [email, setEmail] = useState(initialData?.email || '');
   const [perfil, setPerfil] = useState('administrador');
-  const [telefone, setTelefone] = useState(initialData?.telefone || '');
 
   React.useEffect(() => {
     setNome(initialData?.nome || '');
     setEmail(initialData?.email || '');
-    setTelefone(initialData?.telefone || '');
   }, [initialData, open]);
 
   const handleSave = async () => {
-    if (!email || !nome || !perfil || !telefone) {
+    if (!email || !nome || !perfil) {
       alert('Por favor, preencha todos os campos.');
       return;
     }
     if (onSave) {
-      // Modo edição: NÃO envia convite, apenas atualiza
-      await onSave({ nome, email, perfil, telefone });
+      await onSave({ nome, email, perfil });
       if (atualizarLista) await atualizarLista();
       onClose();
       return;
     }
-    // Modo criação: envia convite e cria admin
+
     try {
-      const url = process.env.REACT_APP_SUPABASE_URL;
-      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-      const serviceRoleKey = process.env.REACT_APP_SUPABASE_SERVICE_ROLE_KEY;
-      if (!url || !serviceKey || !serviceRoleKey) throw new Error('Variáveis de ambiente do Supabase não definidas');
-      // 1. Enviar convite
-      const inviteResponse = await fetch(`${url}/auth/v1/invite`, {
-        method: 'POST',
-        headers: {
-          'apikey': serviceKey,
-          'Authorization': `Bearer ${serviceRoleKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ email })
-      });
-      const inviteData = await inviteResponse.json();
-      if (!inviteResponse.ok) {
-        throw new Error(inviteData.error_description || inviteData.message || `Erro ${inviteResponse.status}`);
-      }
-      const userId = inviteData.user?.id || inviteData.id;
-      if (!userId) {
-        alert('Erro: user_id não retornado pelo convite.');
+      // Verificar se o administrador já existe
+      const adminExistente = await verificarAdminExistente(email);
+      
+      if (adminExistente) {
+        // Se o admin existe, enviar email de recuperação de senha
+        await recoverPassword(email);
+        alert('Este email já está cadastrado. Um email de recuperação de senha foi enviado.');
+        onClose();
         return;
       }
-      // 2. Criar admin
-      const body = { user_id: userId, nome, email, status: 'Ativo', perfil, telefone };
-      const adminResponse = await fetch(`${url}/rest/v1/administrador`, {
-        method: 'POST',
-        headers: {
-          'apikey': serviceKey,
-          'Authorization': `Bearer ${serviceKey}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal'
-        },
-        body: JSON.stringify(body)
-      });
-      if (!adminResponse.ok) {
-        const adminData = await adminResponse.json().catch(() => ({}));
-        throw new Error(adminData.error_description || adminData.message || `Erro ${adminResponse.status}`);
+
+      // 1. Enviar convite
+      console.log('[AddUserAdminDialog] Enviando convite para:', email);
+      const inviteResponse = await sendInvite(email);
+      
+      const userId = inviteResponse.id;
+      if (!userId) {
+        throw new Error('ID do usuário não retornado pelo convite.');
       }
+
+      // 2. Criar admin
+      console.log('[AddUserAdminDialog] Criando administrador para userId:', userId);
+      await criarAdminUser({
+        user_id: userId,
+        nome,
+        email,
+        perfil,
+        status: 'Ativo'
+      });
+
       if (atualizarLista) await atualizarLista();
       alert('Convite enviado e administrador criado com sucesso!');
       onClose();
     } catch (error: any) {
-      console.error('Erro ao enviar convite/criar admin:', error);
-      alert('Erro ao enviar convite/criar admin. Por favor, tente novamente.');
+      console.error('[AddUserAdminDialog] Erro:', error);
+      
+      // Tratamento específico para email duplicado
+      if (error.message?.includes('duplicate key value') || error.code === '23505') {
+        try {
+          await recoverPassword(email);
+          alert('Este email já está cadastrado. Um email de recuperação de senha foi enviado.');
+        } catch (recoveryError) {
+          alert('Este email já está cadastrado. Tente usar um email diferente ou entre em contato com o suporte.');
+        }
+      } else {
+        alert(`Erro ao enviar convite/criar admin: ${error.message}`);
+      }
     }
   };
 
@@ -139,23 +227,6 @@ const AddUserAdminDialog: React.FC<AddUserAdminDialogProps> = ({ open, onClose, 
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-        />
-        <TextField
-          margin="dense"
-          id="telefone"
-          label="Telefone"
-          type="text"
-          fullWidth
-          value={telefone}
-          onChange={(e) => setTelefone(e.target.value)}
-          required
-          InputProps={{
-            inputComponent: InputMask as any,
-            inputProps: {
-              mask: '(99) 99999-9999',
-              maskChar: null
-            }
-          }}
         />
         <FormControl fullWidth margin="dense">
           <InputLabel id="perfil-label">Perfil</InputLabel>
