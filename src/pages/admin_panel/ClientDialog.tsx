@@ -3,43 +3,19 @@ import {
   Dialog,
   DialogActions,
   DialogContent,
+  DialogContentText,
   DialogTitle,
   TextField,
   Button
 } from '@mui/material';
 import InputMask from 'react-input-mask';
 
-export interface Cliente {
-  id: number;
-  nome: string;
-  email: string;
-  telefone: string;
-  status: string;
-  perfil?: string;
-  criado_em?: string;
-}
-
-interface ClientDialogProps {
-  open: boolean;
-  onClose: () => void;
-  initialData?: Cliente;
-  onSave: (data: Cliente) => void;
-  isEditing?: boolean;
-}
-
-const emptyClient: Cliente = {
-  id: 0,
-  nome: '',
-  email: '',
-  telefone: '',
-  status: 'ativo',
-};
-
-// Funções auxiliares para convite e criação
+// Configurações do Supabase
 const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
 const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
 const serviceRoleKey = process.env.REACT_APP_SUPABASE_SERVICE_ROLE_KEY;
 
+// Função para enviar convite
 async function sendInvite(email: string) {
   if (!supabaseUrl || !serviceKey || !serviceRoleKey) {
     throw new Error('Variáveis de ambiente do Supabase não definidas');
@@ -60,16 +36,25 @@ async function sendInvite(email: string) {
   return data;
 }
 
-async function criarCliente({ user_id, nome, telefone, status = 'Ativo', email }: { user_id: string, nome: string, telefone: string, status?: string, email?: string }) {
-  if (!supabaseUrl || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou SERVICE_KEY não definida no .env');
-  const body = { user_id, nome, telefone, status, email };
+// Função para criar cliente
+async function criarCliente({ user_id, nome, telefone, email, status = 'Ativo' }: {
+  user_id: string;
+  nome: string;
+  telefone: string;
+  email: string;
+  status?: string;
+}) {
+  if (!supabaseUrl || !serviceKey) {
+    throw new Error('Variáveis de ambiente do Supabase não definidas');
+  }
+  const body = { user_id, nome, telefone, email, status };
   const response = await fetch(`${supabaseUrl}/rest/v1/cliente`, {
     method: 'POST',
     headers: {
       'apikey': serviceKey,
       'Authorization': `Bearer ${serviceKey}`,
       'Content-Type': 'application/json',
-      'Prefer': 'return=minimal'
+      'Prefer': 'return=representation'
     },
     body: JSON.stringify(body)
   });
@@ -77,161 +62,148 @@ async function criarCliente({ user_id, nome, telefone, status = 'Ativo', email }
     const data = await response.json().catch(() => ({}));
     throw new Error(data.error_description || data.message || `Erro ${response.status}`);
   }
-  return true;
+  return response.json();
 }
 
-// Função para recuperação de senha (adaptada de src/pages/login/api.ts)
-async function recoverPassword(email: string) {
-  if (!supabaseUrl || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou SERVICE_KEY não definida no .env');
-  const response = await fetch(`${supabaseUrl}/auth/v1/recover`, {
-    method: 'POST',
+// Função para verificar cliente existente
+async function verificarClienteExistente(email: string) {
+  if (!supabaseUrl || !serviceKey) {
+    throw new Error('Variáveis de ambiente do Supabase não definidas');
+  }
+  const response = await fetch(`${supabaseUrl}/rest/v1/cliente?email=eq.${encodeURIComponent(email)}`, {
+    method: 'GET',
     headers: {
       'apikey': serviceKey,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ email }),
+      'Authorization': `Bearer ${serviceKey}`,
+      'Content-Type': 'application/json'
+    }
   });
-  const data = await response.json();
   if (!response.ok) {
+    throw new Error('Erro ao verificar cliente existente');
+  }
+  const data = await response.json();
+  return data[0] || null;
+}
+
+// Função para atualizar cliente
+async function atualizarCliente(id: number, dados: { nome: string; email: string; telefone: string; status?: string }) {
+  if (!supabaseUrl || !serviceKey) {
+    throw new Error('Variáveis de ambiente do Supabase não definidas');
+  }
+  const response = await fetch(`${supabaseUrl}/rest/v1/cliente?id=eq.${id}`, {
+    method: 'PATCH',
+    headers: {
+      'apikey': serviceKey,
+      'Authorization': `Bearer ${serviceKey}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation'
+    },
+    body: JSON.stringify(dados)
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
     throw new Error(data.error_description || data.message || `Erro ${response.status}`);
   }
-  return data;
+  return response.json();
+}
+
+export interface Cliente {
+  id: number;
+  nome: string;
+  email: string;
+  telefone: string;
+  status: string;
+}
+
+interface ClientDialogProps {
+  open: boolean;
+  onClose: () => void;
+  initialData?: Cliente;
+  onSave: (data: Cliente) => void;
+  isEditing?: boolean;
 }
 
 const ClientDialog: React.FC<ClientDialogProps> = ({ open, onClose, initialData, onSave, isEditing }) => {
-  const [formData, setFormData] = useState<Cliente>(initialData || emptyClient);
+  const [nome, setNome] = useState(initialData?.nome || '');
+  const [email, setEmail] = useState(initialData?.email || '');
+  const [telefone, setTelefone] = useState(initialData?.telefone || '');
   const [loading, setLoading] = useState(false);
 
-  // Limpar campos ao abrir para criação
   useEffect(() => {
     if (open) {
-      if (!isEditing) {
-        setFormData(emptyClient);
-      } else if (initialData) {
-        setFormData(initialData);
-      }
+      setNome(initialData?.nome || '');
+      setEmail(initialData?.email || '');
+      setTelefone(initialData?.telefone || '');
     }
-  }, [open, isEditing, initialData]);
-
-  useEffect(() => {
-    if (open && isEditing && initialData && initialData.id) {
-      // ... fetch do cliente para edição ...
-      const url = process.env.REACT_APP_SUPABASE_URL;
-      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-      const accessToken = localStorage.getItem('userToken');
-      if (!url || !serviceKey) {
-        console.error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
-        return;
-      }
-      const headers = {
-        apikey: serviceKey,
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      };
-      const fetchUrl = `${url}/rest/v1/cliente?select=*&id=eq.${initialData.id}`;
-      fetch(fetchUrl, { headers })
-        .then(res => res.json())
-        .then(data => {
-          if (data && data[0]) setFormData(data[0]);
-        })
-        .catch(err => {
-          console.error('[API] Erro', err);
-        });
-    }
-  }, [open, isEditing, initialData]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
+  }, [initialData, open]);
 
   const handleSave = async () => {
-    if (!formData.nome || !formData.email || !formData.telefone) {
+    if (!nome || !email || !telefone) {
       alert('Por favor, preencha todos os campos obrigatórios.');
       return;
     }
+
     setLoading(true);
     try {
-      if (isEditing && formData.id) {
-        // Atualização (já implementado)
-        const url = process.env.REACT_APP_SUPABASE_URL;
-        const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-        const accessToken = localStorage.getItem('userToken');
-        if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
-        const headers = {
-          apikey: serviceKey,
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=representation',
-        };
-        const response = await fetch(`${url}/rest/v1/cliente?id=eq.${formData.id}`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({
-            nome: formData.nome,
-            email: formData.email,
-            telefone: formData.telefone,
-            status: formData.status
-          })
+      console.log('[ClientDialog] Iniciando operação de', isEditing ? 'edição' : 'criação');
+
+      if (isEditing && initialData?.id) {
+        console.log('[ClientDialog] Atualizando cliente:', initialData.id);
+        const clienteAtualizado = await atualizarCliente(initialData.id, {
+          nome,
+          email,
+          telefone,
+          status: 'ativo'
         });
-        if (!response.ok) {
-          const data = await response.json().catch(() => ({}));
-          throw new Error(data.error_description || data.message || `Erro ${response.status}`);
-        }
+        
         alert('Cliente atualizado com sucesso!');
-        onSave(formData);
+        onSave(clienteAtualizado[0]);
       } else {
-        // Verificar se o cliente já existe e está deletado
-        const url = process.env.REACT_APP_SUPABASE_URL;
-        const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-        if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
-        const checkResponse = await fetch(`${url}/rest/v1/cliente?email=eq.${encodeURIComponent(formData.email)}`, {
-          method: 'GET',
-          headers: {
-            'apikey': serviceKey,
-            'Authorization': `Bearer ${serviceKey}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        const existingClients = await checkResponse.json();
-        const existingClient = existingClients[0];
-        if (existingClient && existingClient.deletado) {
-          // Cliente existe e está deletado, enviar convite de redefinição e reativar
-          await recoverPassword(formData.email);
-          // PATCH para deletado = false
-          await fetch(`${url}/rest/v1/cliente?id=eq.${existingClient.id}`, {
-            method: 'PATCH',
-            headers: {
-              'apikey': serviceKey,
-              'Authorization': `Bearer ${serviceKey}`,
-              'Content-Type': 'application/json',
-              'Prefer': 'return=representation'
-            },
-            body: JSON.stringify({ deletado: false })
+        // Verificar se o cliente já existe
+        console.log('[ClientDialog] Verificando cliente existente:', email);
+        const clienteExistente = await verificarClienteExistente(email);
+
+        if (clienteExistente?.deletado) {
+          console.log('[ClientDialog] Reativando cliente deletado:', clienteExistente.id);
+          const clienteReativado = await atualizarCliente(clienteExistente.id, {
+            nome,
+            email,
+            telefone,
+            status: 'ativo'
           });
-          alert('Convite de redefinição de senha enviado e cliente reativado com sucesso!');
-          onSave({ ...formData, id: existingClient.id });
+          
+          alert('Cliente reativado com sucesso!');
+          onSave(clienteReativado[0]);
+        } else if (clienteExistente) {
+          throw new Error('Este email já está cadastrado para outro cliente.');
         } else {
-          // Cliente não existe ou não está deletado, enviar convite e criar cliente
-          const inviteResp = await sendInvite(formData.email);
-          const user_id = inviteResp.user?.id || inviteResp.id;
-          if (!user_id) throw new Error('ID do usuário não retornado pelo convite.');
-          await criarCliente({
-            user_id,
-            nome: formData.nome,
-            telefone: formData.telefone,
-            status: formData.status,
-            email: formData.email
+          // Criar novo cliente
+          console.log('[ClientDialog] Enviando convite para novo cliente');
+          const inviteResponse = await sendInvite(email);
+          const userId = inviteResponse.user?.id || inviteResponse.id;
+
+          if (!userId) {
+            throw new Error('ID do usuário não retornado pelo convite.');
+          }
+
+          console.log('[ClientDialog] Criando novo cliente para userId:', userId);
+          const novoCliente = await criarCliente({
+            user_id: userId,
+            nome,
+            telefone,
+            email,
+            status: 'ativo'
           });
+
           alert('Cliente criado e convite enviado com sucesso!');
-          onSave({ ...formData, id: 0 }); // id fictício, recarregue a lista se necessário
+          onSave(novoCliente[0]);
         }
       }
+
+      onClose();
     } catch (error: any) {
-      alert('Erro ao salvar cliente: ' + error.message);
+      console.error('[ClientDialog] Erro:', error);
+      alert(`Erro ao ${isEditing ? 'atualizar' : 'criar'} cliente: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -241,38 +213,40 @@ const ClientDialog: React.FC<ClientDialogProps> = ({ open, onClose, initialData,
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>{isEditing ? 'Editar Cliente' : 'Adicionar Cliente'}</DialogTitle>
       <DialogContent>
+        <DialogContentText>
+          {isEditing 
+            ? 'Edite as informações do cliente abaixo.'
+            : 'Preencha as informações abaixo para adicionar um novo cliente.'}
+        </DialogContentText>
         <TextField
           autoFocus
           margin="dense"
           label="Nome Completo"
-          name="nome"
           type="text"
           fullWidth
           variant="outlined"
-          value={formData.nome}
-          onChange={handleChange}
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
           required
         />
         <TextField
           margin="dense"
           label="Email"
-          name="email"
           type="email"
           fullWidth
           variant="outlined"
-          value={formData.email}
-          onChange={handleChange}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
           required
         />
         <TextField
           margin="dense"
           label="Telefone"
-          name="telefone"
           type="text"
           fullWidth
           variant="outlined"
-          value={formData.telefone}
-          onChange={handleChange}
+          value={telefone}
+          onChange={(e) => setTelefone(e.target.value)}
           required
           InputProps={{
             inputComponent: InputMask as any,
@@ -285,7 +259,13 @@ const ClientDialog: React.FC<ClientDialogProps> = ({ open, onClose, initialData,
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancelar</Button>
-        <Button onClick={handleSave} variant="contained" disabled={loading}>Salvar</Button>
+        <Button 
+          onClick={handleSave} 
+          variant="contained" 
+          disabled={loading}
+        >
+          {loading ? 'Salvando...' : 'Salvar'}
+        </Button>
       </DialogActions>
     </Dialog>
   );
