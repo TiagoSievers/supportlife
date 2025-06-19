@@ -41,7 +41,7 @@ const ClientList: React.FC<ClientListProps> = ({ onEditClient }) => {
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
 
-  // Função para buscar clientes via API (conforme exemplo curl)
+  // Função para buscar clientes via API
   const fetchClientesFromAPI = async () => {
     try {
       setLoading(true);
@@ -50,6 +50,7 @@ const ClientList: React.FC<ClientListProps> = ({ onEditClient }) => {
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
       if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
       const accessToken = localStorage.getItem('accessToken');
+
       const response = await fetch(`${url}/rest/v1/cliente`, {
         method: 'GET',
         headers: {
@@ -58,10 +59,13 @@ const ClientList: React.FC<ClientListProps> = ({ onEditClient }) => {
           'Content-Type': 'application/json'
         }
       });
+
       let data = await response.json();
       if (!response.ok) throw new Error(data.error_description || data.message || `Erro ${response.status}`);
+      
       // Filtrar clientes não deletados
       const clientesNaoDeletados = data.filter((c: Cliente) => !c.deletado);
+      
       // Ordena do mais recente para o mais antigo
       clientesNaoDeletados.sort((a: Cliente, b: Cliente) => {
         if (a.criado_em && b.criado_em) {
@@ -69,6 +73,7 @@ const ClientList: React.FC<ClientListProps> = ({ onEditClient }) => {
         }
         return b.id - a.id;
       });
+      
       setClientes(clientesNaoDeletados);
     } catch (error) {
       console.error('Erro ao carregar clientes:', error);
@@ -104,21 +109,22 @@ const ClientList: React.FC<ClientListProps> = ({ onEditClient }) => {
   const handleConfirmDelete = async () => {
     if (!clientToDelete) return;
     try {
-      // PATCH para marcar como deletado
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-      const accessToken = localStorage.getItem('userToken');
+      const accessToken = localStorage.getItem('accessToken');
       if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
+
       const response = await fetch(`${url}/rest/v1/cliente?id=eq.${clientToDelete.id}`, {
         method: 'PATCH',
         headers: {
           'apikey': serviceKey,
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
-          'Prefer': 'return=representation'
+          'Prefer': 'return=minimal'
         },
         body: JSON.stringify({ deletado: true })
       });
+
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.error_description || data.message || `Erro ${response.status}`);

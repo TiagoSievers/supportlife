@@ -97,7 +97,7 @@ const AdminUserList: React.FC = () => {
           'apikey': serviceKey,
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
-          'Prefer': 'return=representation'
+          'Prefer': 'return=minimal'
         },
         body: JSON.stringify({ deletado: true })
       });
@@ -136,7 +136,7 @@ const AdminUserList: React.FC = () => {
           'apikey': serviceKey,
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
-          'Prefer': 'return=representation'
+          'Prefer': 'return=minimal'
         },
         body: JSON.stringify({
           nome: data.nome,

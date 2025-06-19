@@ -11,6 +11,7 @@ export type AdminUserParams = {
   perfil?: string;
   status?: string;
   data_cadastro?: string;
+  telefone?: string;
 };
 
 // Buscar todos os administradores
@@ -32,8 +33,8 @@ export async function buscarAdminUsers(): Promise<AdminUserParams[]> {
 }
 
 // Criar novo administrador
-export async function criarAdminUser({ user_id, nome, email, status = 'Ativo', perfil }: AdminUserParams): Promise<boolean> {
-  const body = { user_id, nome, email, status, perfil };
+export async function criarAdminUser({ user_id, nome, email, status = 'Ativo', perfil, telefone }: AdminUserParams): Promise<boolean> {
+  const body = { user_id, nome, email, status, perfil, telefone };
   const response = await fetch(`${url}/rest/v1/administrador`, {
     method: 'POST',
     headers: {

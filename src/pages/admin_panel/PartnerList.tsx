@@ -148,6 +148,26 @@ const PartnerList: React.FC = () => {
   const handleConfirmDelete = async () => {
     if (!socorristaToDelete) return;
     try {
+      const url = process.env.REACT_APP_SUPABASE_URL;
+      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+      if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
+      const accessToken = localStorage.getItem('accessToken');
+
+      const response = await fetch(`${url}/rest/v1/socorrista?id=eq.${socorristaToDelete.id}`, {
+        method: 'PATCH',
+        headers: {
+          'apikey': serviceKey,
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({ deletado: true })
+      });
+
+      if (!response.ok) {
+        const respData = await response.json().catch(() => ({}));
+        throw new Error(respData.error_description || respData.message || `Erro ${response.status}`);
+      }
       setDeleteDialogOpen(false);
       setSocorristaToDelete(null);
       alert('Socorrista excluído com sucesso!');

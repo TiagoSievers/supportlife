@@ -77,12 +77,11 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
     setLoading(true);
     setError(null);
     try {
-      setLoading(true);
-      setError(null);
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
       if (!url || !serviceKey) throw new Error('REACT_APP_SUPABASE_URL ou REACT_APP_SUPABASE_SERVICE_KEY não definida no .env');
       const accessToken = localStorage.getItem('accessToken');
+
       const response = await fetch(`${url}/rest/v1/chamado`, {
         method: 'GET',
         headers: {
@@ -91,8 +90,10 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
           'Content-Type': 'application/json'
         }
       });
+
       let data = await response.json();
       if (!response.ok) throw new Error(data.error_description || data.message || `Erro ${response.status}`);
+
       // Ordenar por data_abertura decrescente
       data.sort((a: any, b: any) => {
         if (a.data_abertura && b.data_abertura) {
@@ -100,10 +101,10 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
         }
         return (b.id || 0) - (a.id || 0);
       });
+
       // Detecta novo chamado
       const maxId = data.length > 0 ? Math.max(...data.map((c: any) => c.id || 0)) : 0;
       if (lastMaxIdRef.current && maxId > lastMaxIdRef.current) {
-        // Novo chamado detectado
         if (audioRef.current) {
           audioRef.current.currentTime = 0;
           audioRef.current.play();
@@ -160,32 +161,30 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
     let nome = '';
     let telefone = '';
     if (chamado && chamado.cliente_id) {
-      // Buscar nome do cliente
       try {
         const url = process.env.REACT_APP_SUPABASE_URL;
         const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+        const accessToken = localStorage.getItem('accessToken');
         if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
+        
         const clienteResp = await fetch(`${url}/rest/v1/cliente?id=eq.${chamado.cliente_id}`, {
           headers: {
             'apikey': serviceKey,
-            'Authorization': `Bearer ${serviceKey}`,
+            'Authorization': `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
           }
         });
         const clienteData = await clienteResp.json();
-        // Log completo das informações do cliente
         if (clienteData && clienteData[0]) {
           console.log('[CLIENTE COMPLETO]', clienteData[0]);
           telefone = clienteData[0].telefone || '';
-        }
-        if (clienteData && clienteData[0] && clienteData[0].nome) {
-          nome = clienteData[0].nome;
+          nome = clienteData[0].nome || '';
         }
       } catch (err) {
-        // Se der erro, ignora e segue sem nome
+        console.error('Erro ao buscar dados do cliente:', err);
       }
     }
-    // Log das informações do cliente
+
     if (chamado) {
       console.log('[VISUALIZAR CHAMADO] Cliente:', {
         chamado_id: chamado.id,
@@ -196,22 +195,7 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
         endereco: chamado.endereco_textual || '',
       });
     }
-    // Chamada API curl fixa
-    const clienteId = chamado && chamado.cliente_id ? chamado.cliente_id : 12;
-    const endpoint = `https://usqozshucjsgmfgaoiad.supabase.co/rest/v1/chamado?select=*&cliente_id=eq.${clienteId}&order=data_abertura.desc`;
-    const headers = {
-      'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzcW96c2h1Y2pzZ21mZ2FvaWFkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY3OTI4OTUsImV4cCI6MjA2MjM2ODg5NX0.DMNalkURt6sp2g21URpXfcY4ts53cLxbMR_spk-TgvQ',
-      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsImtpZCI6IlNPZzBsRGZCMm95VHhnWjIiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL3VzcW96c2h1Y2pzZ21mZ2FvaWFkLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJjNDkxYzBjNC1lNGI2LTQxMGMtODVkNC1jMjUwMTc0ZjA0MGIiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzQ5Njc4MDE5LCJpYXQiOjE3NDkwNzMyMTksImVtYWlsIjoib3Jvc2lvMTExNEB1b3Jhay5jb20iLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsX3ZlcmlmaWVkIjp0cnVlfSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc0OTA3MzIxOX1dLCJzZXNzaW9uX2lkIjoiYzJlYjFjNjctMTgyZi00MDgxLTgzZGYtODIxNjJlMzVhNDg3IiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.UooyxmTZztdzRDsg4QrCR5DzrusFtX543RpZxP4Heok',
-      'Content-Type': 'application/json'
-    };
-    console.log('[API CHAMADO] Fazendo fetch:', endpoint, headers);
-    try {
-      const response = await fetch(endpoint, { headers });
-      const data = await response.json();
-      console.log('[API CHAMADO] Resultado:', data);
-    } catch (err) {
-      console.error('[API CHAMADO] Erro:', err);
-    }
+
     setPopupChamado({
       id: chamadoId,
       nome,
@@ -234,11 +218,12 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
       const url = process.env.REACT_APP_SUPABASE_URL;
       const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
       if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
+      const accessToken = localStorage.getItem('accessToken');
       const response = await fetch(`${url}/rest/v1/chamado?id=eq.${chamadoId}`, {
         method: 'PATCH',
         headers: {
           'apikey': serviceKey,
-          'Authorization': `Bearer ${serviceKey}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
           'Prefer': 'return=minimal'
         },
