@@ -44,6 +44,7 @@ import ClientDialog, { Cliente } from './ClientDialog';
 import MenuIcon from '@mui/icons-material/Menu';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
+import logoImage from '../../assets/cropped_image.png';
 
 const drawerWidth = 240;
 
@@ -245,7 +246,7 @@ const AdminPanel: React.FC = () => {
               >
                 <Box
                   component="img"
-                  src={require('../../assets/cropped_image.png')}
+                  src={logoImage}
                   alt="Marca d'água Support Life"
                   sx={{ width: '80%', pointerEvents: 'none', userSelect: 'none', display: 'block' }}
                 />
@@ -306,7 +307,7 @@ const AdminPanel: React.FC = () => {
             >
               <Box
                 component="img"
-                src={require('../../assets/cropped_image.png')}
+                src={logoImage}
                 alt="Marca d'água Support Life"
                 sx={{ width: '80%', pointerEvents: 'none', userSelect: 'none', display: 'block' }}
               />

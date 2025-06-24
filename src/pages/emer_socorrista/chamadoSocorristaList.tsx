@@ -4,6 +4,13 @@ import ChamadoModal from './ChamadoModal';
 // Removido import getAddressFromCoords - usando endereco_textual do banco
 import { supabase } from '../../Supabase/supabaseRealtimeClient';
 
+// Função para ativar o sino no Navbar
+const ativarSinoNotificacao = () => {
+  // Emitir um evento customizado que o Navbar vai escutar
+  const event = new CustomEvent('novaNotificacao');
+  window.dispatchEvent(event);
+};
+
 export interface Chamado {
   id: string;
   cliente_id: string;
@@ -14,11 +21,7 @@ export interface Chamado {
   posicao_inicial_socorrista?: string;
 }
 
-interface ChamadoSocorristaListProps {
-  onNewChamado?: () => void;
-}
-
-const ChamadoSocorristaList: React.FC<ChamadoSocorristaListProps> = ({ onNewChamado }) => {
+const ChamadoSocorristaList: React.FC = () => {
   const [chamados, setChamados] = useState<Chamado[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +31,6 @@ const ChamadoSocorristaList: React.FC<ChamadoSocorristaListProps> = ({ onNewCham
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const prevChamadosCount = useRef(0);
 
   const fetchChamados = async () => {
     setLoading(true);
@@ -60,9 +62,6 @@ const ChamadoSocorristaList: React.FC<ChamadoSocorristaListProps> = ({ onNewCham
         return (b.id || 0) - (a.id || 0);
       });
 
-      // Apenas atualiza o contador, sem trigger de som ou callback
-      prevChamadosCount.current = data.length;
-
       setChamados(data);
       // Endereços agora vem diretamente do campo endereco_textual do banco
     } catch (err: any) {
@@ -77,17 +76,27 @@ const ChamadoSocorristaList: React.FC<ChamadoSocorristaListProps> = ({ onNewCham
     // Realtime subscription
     const channel = supabase
       .channel('public:chamado-socorrista-list')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chamado' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chamado' }, (payload: any) => {
         console.log('[REALTIME SOCORRISTA LIST] Evento detectado:', payload);
-        // Sempre recarrega a lista filtrada, nunca adiciona manualmente o chamado
-        fetchChamados();
+        
+        // Verificar se o status é "Aceito / Em andamento"
+        if (payload.new && payload.new.status === 'Aceito / Em andamento') {
+          console.log('notificação');
+          // Ativar o sino no Navbar
+          ativarSinoNotificacao();
+          // Tocar som de notificação
+          if (audioRef.current) {
+            audioRef.current.play().catch(err => console.error('Erro ao tocar som:', err));
+          }
+          // Sempre recarrega a lista filtrada
+          fetchChamados();
+        }
       })
       .subscribe();
     return () => {
       supabase.removeChannel(channel);
     };
-    // eslint-disable-next-line
-  }, [onNewChamado]);
+  }, []);
 
   const handleVisualizar = async (chamado: Chamado) => {
     try {
@@ -213,6 +222,7 @@ const ChamadoSocorristaList: React.FC<ChamadoSocorristaListProps> = ({ onNewCham
 
   return (
     <Box sx={{ background: 'transparent', boxShadow: 'none', border: 'none' }}>
+      <audio ref={audioRef} src={`${process.env.PUBLIC_URL}/assets/notification.mp3`} />
       <Typography variant="h6" sx={{ p: 2 }}>
         Lista de Chamados
       </Typography>

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { supabase } from '../Supabase/supabaseRealtimeClient';
 import {
   AppBar,
   Toolbar,
@@ -12,28 +13,43 @@ import {
   ListItem,
   ListItemButton,
   ListItemIcon,
-  ListItemText
+  ListItemText,
+  Button
 } from '@mui/material';
 import { AccountCircle, Notifications as NotificationsIcon, Menu as MenuIcon, People as FamilyIcon, Dashboard as AdminIcon, Person as ProfileIcon, Home as HomeIcon } from '@mui/icons-material';
 import ClientDialog, { Cliente } from '../pages/admin_panel/ClientDialog';
 import ChamadoDialog, { Chamado } from '../cliente/ChamadoDialog';
 
-interface NavbarProps {
-  hasNewChamado?: boolean;
-  onNotificationClick?: () => void;
-}
-
-const Navbar: React.FC<NavbarProps> = ({ hasNewChamado = false, onNotificationClick }) => {
+const Navbar: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [clientDialogOpen, setClientDialogOpen] = useState(false);
   const [clientData, setClientData] = useState<Cliente | undefined>(undefined);
   const [chamadoDialogOpen, setChamadoDialogOpen] = useState(false);
   const [chamadoData, setChamadoData] = useState<Chamado | undefined>(undefined);
+  const [hasNewChamado, setHasNewChamado] = useState(false);
+
   const isLoggedIn = Boolean(localStorage.getItem('userToken'));
   const location = useLocation();
   const isHome = location && location.pathname === '/';
   const navigate = useNavigate();
   const clienteId = localStorage.getItem('clienteId');
+
+  useEffect(() => {
+    const handleNovaNotificacao = () => {
+      setHasNewChamado(true);
+      // Tocar o som de notificação
+      const audio = new Audio('/assets/notification.mp3');
+      audio.play().catch(() => {
+        console.log('Erro ao tocar som de notificação');
+      });
+    };
+
+    window.addEventListener('novaNotificacao', handleNovaNotificacao);
+
+    return () => {
+      window.removeEventListener('novaNotificacao', handleNovaNotificacao);
+    };
+  }, []);
 
   const handleDrawerOpen = () => setDrawerOpen(true);
   const handleDrawerClose = () => setDrawerOpen(false);
@@ -44,12 +60,10 @@ const Navbar: React.FC<NavbarProps> = ({ hasNewChamado = false, onNotificationCl
   };
 
   const handleOpenClientDialog = () => {
-    // Buscar dados do cliente do localStorage ou mock
     const stored = localStorage.getItem('clienteData');
     if (stored) {
       setClientData(JSON.parse(stored));
     } else {
-      // Mock caso não exista
       setClientData({
         id: 1,
         nome: 'Nome do Cliente',
@@ -70,7 +84,6 @@ const Navbar: React.FC<NavbarProps> = ({ hasNewChamado = false, onNotificationCl
   };
 
   const handleOpenChamadoDialog = () => {
-    // Mock de chamado
     setChamadoData({
       id: 123,
       cliente_id: 1,
@@ -126,7 +139,9 @@ const Navbar: React.FC<NavbarProps> = ({ hasNewChamado = false, onNotificationCl
                 size="large"
                 edge="end"
                 aria-label="notifications"
-                onClick={onNotificationClick}
+                onClick={() => {
+                  setHasNewChamado(false);
+                }}
                 sx={{ 
                   color: '#f44336',
                   mr: 1,

@@ -3,12 +3,7 @@ import { Container, Typography, Box, Paper } from '@mui/material';
 import ChamadoSocorristaList from './chamadoSocorristaList';
 // import Navbar from '../../components/Navbar';
 
-interface PartnerEmergenciesProps {
-  hasNewChamado: boolean;
-  onNewChamado: (hasNew: boolean) => void;
-}
-
-const PartnerEmergencies: React.FC<PartnerEmergenciesProps> = ({ hasNewChamado, onNewChamado }) => {
+const PartnerEmergencies: React.FC = () => {
   const [aceitos, setAceitos] = useState(0);
 
   useEffect(() => {
@@ -16,11 +11,27 @@ const PartnerEmergencies: React.FC<PartnerEmergenciesProps> = ({ hasNewChamado, 
       try {
         const url = process.env.REACT_APP_SUPABASE_URL;
         const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-        const accessToken = localStorage.getItem('userToken');
+        const accessToken = localStorage.getItem('accessToken');
         const socorristaId = localStorage.getItem('socorristaId');
-        if (!url || !serviceKey || !socorristaId) return;
-        if (!accessToken) return;
-        const response = await fetch(`${url}/rest/v1/chamado?socorrista_id=eq.${socorristaId}`, {
+
+        console.log('=== DEBUG API CHAMADOS ===');
+        console.log('URL:', url);
+        console.log('socorristaId:', socorristaId);
+        console.log('accessToken:', accessToken ? 'Presente' : 'Ausente');
+        
+        if (!url || !serviceKey || !socorristaId) {
+          console.log('Faltando parâmetros:', { url: !!url, serviceKey: !!serviceKey, socorristaId: !!socorristaId });
+          return;
+        }
+        if (!accessToken) {
+          console.log('AccessToken não encontrado');
+          return;
+        }
+
+        const apiUrl = `${url}/rest/v1/chamado?socorrista_id=eq.${socorristaId}`;
+        console.log('API URL completa:', apiUrl);
+        
+        const response = await fetch(apiUrl, {
           method: 'GET',
           headers: {
             'apikey': serviceKey,
@@ -28,26 +39,21 @@ const PartnerEmergencies: React.FC<PartnerEmergenciesProps> = ({ hasNewChamado, 
             'Content-Type': 'application/json'
           }
         });
+
+        console.log('Status da resposta:', response.status);
         const data = await response.json();
+        console.log('Dados recebidos:', data);
+        
         if (Array.isArray(data)) {
+          console.log('Total de chamados encontrados:', data.length);
           setAceitos(data.length);
         }
-      } catch {}
+      } catch (error) {
+        console.error('Erro na API:', error);
+      }
     };
     fetchAceitos();
   }, []);
-
-  // Função para lidar com novos chamados
-  const handleNewChamado = () => {
-    console.log('[PARTNER EMERGENCIES] Novo chamado detectado - ativando notificação');
-    onNewChamado(true);
-  };
-
-  // Função para resetar a notificação (pode ser chamada quando o usuário visualiza)
-  const handleResetNotification = () => {
-    console.log('[PARTNER EMERGENCIES] Resetando notificação');
-    onNewChamado(false);
-  };
 
   return (
     <>
@@ -90,7 +96,7 @@ const PartnerEmergencies: React.FC<PartnerEmergenciesProps> = ({ hasNewChamado, 
             <Typography variant="h6">Chamados aceitos pelo socorrista</Typography>
             <Typography variant="h3" color="primary">{aceitos}</Typography>
           </Paper>
-          <ChamadoSocorristaList onNewChamado={handleNewChamado} />
+          <ChamadoSocorristaList />
         </Box>
       </Container>
     </>
