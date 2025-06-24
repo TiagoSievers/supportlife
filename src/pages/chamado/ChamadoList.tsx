@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, CircularProgress, Button, Tabs, Tab, Select, MenuItem, FormControl, InputLabel } from '@mui/material';
 import PhoneInTalkIcon from '@mui/icons-material/PhoneInTalk';
 import { supabase } from '../../Supabase/supabaseRealtimeClient';
@@ -48,8 +48,6 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
   const [enderecos, setEnderecos] = useState<{ [id: number]: string | null }>({});
   const [popupChamado, setPopupChamado] = useState<any | null>(null);
   const [tabValue, setTabValue] = useState(0);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const lastMaxIdRef = useRef<number>(0);
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('md'));
 
@@ -102,16 +100,6 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
         return (b.id || 0) - (a.id || 0);
       });
 
-      // Detecta novo chamado
-      const maxId = data.length > 0 ? Math.max(...data.map((c: any) => c.id || 0)) : 0;
-      if (lastMaxIdRef.current && maxId > lastMaxIdRef.current) {
-        if (audioRef.current) {
-          audioRef.current.currentTime = 0;
-          audioRef.current.play();
-        }
-        if (onNewChamado) onNewChamado();
-      }
-      lastMaxIdRef.current = maxId;
       setChamados(data);
     } catch (err: any) {
       setError(err.message || 'Erro ao buscar chamados');
@@ -121,39 +109,76 @@ const ChamadoList: React.FC<ChamadoListProps> = ({ onNewChamado }) => {
   };
 
   useEffect(() => {
-    audioRef.current = new Audio('/assets/notification.mp3');
-    // Inicializa o lastMaxIdRef com 0 (ou o maior id já existente, se quiser evitar tocar na primeira carga)
-    lastMaxIdRef.current = 0;
-
-    // Desbloqueia o áudio no primeiro clique do usuário
-    const unlockAudio = () => {
-      if (audioRef.current) {
-        audioRef.current.volume = 0;
-        audioRef.current.play().catch(() => {});
-        audioRef.current.pause();
-        audioRef.current.currentTime = 0;
-        audioRef.current.volume = 1;
-      }
-      window.removeEventListener('click', unlockAudio);
-    };
-    window.addEventListener('click', unlockAudio);
-    return () => {
-      window.removeEventListener('click', unlockAudio);
-    };
-  }, []);
-
-  useEffect(() => {
     fetchChamados();
+    
+    // Configurar canal Realtime do Supabase
     const channel = supabase
       .channel('public:chamado')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chamado' }, (payload) => {
-        fetchChamados();
-      })
-      .subscribe();
+      .on('postgres_changes', 
+        { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'chamado' 
+        }, 
+        (payload) => {
+          // Quando um novo chamado é inserido
+          setChamados(chamados => {
+            const newChamado = payload.new;
+            // Evitar duplicatas
+            if (chamados.some(c => c.id === newChamado.id)) {
+              return chamados;
+            }
+            // Adicionar novo chamado no início da lista
+            return [newChamado, ...chamados].sort((a, b) => {
+              if (a.data_abertura && b.data_abertura) {
+                return new Date(b.data_abertura).getTime() - new Date(a.data_abertura).getTime();
+              }
+              return (b.id || 0) - (a.id || 0);
+            });
+          });
+          // Notificar sobre novo chamado
+          if (onNewChamado) onNewChamado();
+        }
+      )
+      .on('postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chamado'
+        },
+        (payload) => {
+          // Quando um chamado é atualizado
+          setChamados(chamados => {
+            return chamados.map(chamado => 
+              chamado.id === payload.new.id ? payload.new : chamado
+            );
+          });
+        }
+      )
+      .on('postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'chamado'
+        },
+        (payload) => {
+          // Quando um chamado é deletado
+          setChamados(chamados => 
+            chamados.filter(chamado => chamado.id !== payload.old.id)
+          );
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.info('Conectado ao Realtime dos chamados');
+        }
+      });
+
+    // Cleanup na desmontagem do componente
     return () => {
-      supabase.removeChannel(channel);
+      channel.unsubscribe();
     };
-  }, []);
+  }, []); // Dependência vazia pois queremos executar apenas uma vez na montagem
 
   const handleFazerChamado = async (chamadoId: number) => {
     // Buscar o chamado completo

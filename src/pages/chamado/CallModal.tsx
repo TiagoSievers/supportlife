@@ -90,8 +90,11 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
           // Buscar dados do cliente
           const clienteResp = await fetch(`${url}/rest/v1/cliente?id=eq.${clienteId}`, { headers });
           const clienteData = await clienteResp.json();
+          if (clienteData && clienteData[0]) {
+            telefone = clienteData[0].telefone || '';
+            nome = clienteData[0].nome || '';
+          }
           setTelefoneCliente(clienteData[0]?.telefone);
-          console.log('Telefone recebido no CallModal:', clienteData[0]?.telefone);
           // Buscar todos os chamados do cliente (teste com curl fixo)
           const response = await fetch('https://usqozshucjsgmfgaoiad.supabase.co/rest/v1/chamado?select=*&cliente_id=eq.12&order=data_abertura.desc', {
             headers: {
@@ -101,7 +104,6 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
             }
           });
           const data = await response.json();
-          console.log('Chamados retornados do fetch fixo:', data);
           setChamadosCliente(data);
         } catch (err) {
           setChamadosCliente([]);
@@ -170,7 +172,6 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
   const handleCloseSnackbar = () => setSnackbar({ ...snackbar, open: false });
 
   const handleAceitar = async () => {
-    console.log('Botão Aceitar chamado clicado');
     if (!chamadoId) return;
     const url = process.env.REACT_APP_SUPABASE_URL;
     const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
@@ -220,25 +221,22 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
         }
       }
       if (response.status === 204) {
-        console.log('[PATCH chamado] Sucesso: No Content (204)');
         setSnackbar({ open: true, message: 'Status do chamado alterado com sucesso!', severity: 'success' });
       } else {
         const text = await response.text();
         if (text) {
           try {
             const data = JSON.parse(text);
-            console.log('[PATCH chamado] Resposta:', data);
             setSnackbar({ open: true, message: 'Status do chamado alterado com sucesso!', severity: 'success' });
           } catch (jsonErr) {
-            console.log('[PATCH chamado] Resposta não JSON:', text);
+            // Erro ao fazer parse do JSON
           }
         } else {
-          console.log('[PATCH chamado] Sucesso: resposta vazia');
           setSnackbar({ open: true, message: 'Status do chamado alterado com sucesso!', severity: 'success' });
         }
       }
     } catch (err) {
-      console.error('[PATCH chamado] Erro:', err);
+      // Tratar erro
     }
   };
 
@@ -253,7 +251,6 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
     return `${dia}/${mes}/${ano} ${hora}:${min}`;
   }
 
-  console.log('Renderizando modal, telefoneCliente:', telefoneCliente);
   return (
     <Dialog open={open} onClose={onClose}>
       <DialogTitle>
