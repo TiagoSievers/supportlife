@@ -20,8 +20,6 @@ interface Chamado {
   endereco_textual?: string;
 }
 
-const socorristaCoords = { lat: -25.4284, lng: -49.2733 };
-
 const EmergencySocorrista: React.FC = () => {
   const [chamado, setChamado] = useState<Chamado | null>(null);
   const [endereco, setEndereco] = useState<string | null>(null);
@@ -30,7 +28,7 @@ const EmergencySocorrista: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [routeCoords, setRouteCoords] = useState<{ lat: number; lng: number }[]>([]);
   const [loadingRoute, setLoadingRoute] = useState(false);
-  const [socorristaPos, setSocorristaPos] = useState(socorristaCoords);
+  const [socorristaPos, setSocorristaPos] = useState({ lat: 0, lng: 0 });
   const [currentRouteCoords, setCurrentRouteCoords] = useState<{ lat: number; lng: number }[]>([]);
   const [routeDuration, setRouteDuration] = useState<number | null>(null); // duração em segundos
   const [distanciaRota, setDistanciaRota] = useState<number | null>(null);
@@ -352,35 +350,49 @@ const EmergencySocorrista: React.FC = () => {
       }
       
       // Determinar posição inicial do socorrista
-      let socorristaInicial = socorristaCoords;
+      let posicaoInicial;
       if (chamado.posicao_inicial_socorrista) {
         const [socLat, socLng] = chamado.posicao_inicial_socorrista.split(',').map(Number);
-        socorristaInicial = { lat: socLat, lng: socLng };
-        setSocorristaPos(socorristaInicial); // Atualiza a posição atual
+        posicaoInicial = { lat: socLat, lng: socLng };
+        setSocorristaPos(posicaoInicial);
+      } else {
+        // Caso não tenha posição inicial, usar geolocalização atual
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              const pos = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
+              };
+              setSocorristaPos(pos);
+              // Buscar rota com a posição atual
+              getRouteFromOSRM(pos, { lat, lng: lon })
+                .then((result) => {
+                  if (result && result.coords && result.duration) {
+                    setRouteCoords(result.coords);
+                    setCurrentRouteCoords(result.coords);
+                    setRouteDuration(result.duration);
+                  }
+                });
+            }
+          );
+          return; // Retorna aqui pois a rota será buscada no callback da geolocalização
+        }
       }
       
-      // Buscar rota real
-      setLoadingRoute(true);
-      getRouteFromOSRM(socorristaInicial, { lat, lng: lon })
-        .then((result) => {
-          if (result && result.coords && result.duration) {
-            setRouteCoords(result.coords);
-            setCurrentRouteCoords(result.coords); // Inicializa também a rota dinâmica
-            setRouteDuration(result.duration); // duração em segundos
-          } else {
-            setRouteCoords([]);
-            setCurrentRouteCoords([]);
-            setRouteDuration(null);
-          }
-        })
-        .catch(() => {
-          setRouteCoords([]);
-          setCurrentRouteCoords([]);
-          setRouteDuration(null);
-        })
-        .finally(() => setLoadingRoute(false));
+      // Se tiver posição inicial, busca a rota
+      if (posicaoInicial) {
+        getRouteFromOSRM(posicaoInicial, { lat, lng: lon })
+          .then((result) => {
+            if (result && result.coords && result.duration) {
+              setRouteCoords(result.coords);
+              setCurrentRouteCoords(result.coords);
+              setRouteDuration(result.duration);
+            }
+          });
+      }
     }
-  }, [chamado, getRouteFromOSRM]);
+  }, [chamado]);
 
   // Recalcula rota sempre que a posição do socorrista muda - SEMPRE recalcula com proteção inteligente
   useEffect(() => {

@@ -97,8 +97,19 @@ const MapPatnerMap: React.FC<MapPatnerProps> = ({
 }) => {
   if (!center) return null;
 
-  // Usar a rota fornecida sem modificações (será calculada dinamicamente no componente pai)
-  const routeToShow = routeCoords;
+  // Validar e filtrar coordenadas inválidas
+  const validRouteCoords = routeCoords.filter(coord => 
+    coord && 
+    typeof coord.lat === 'number' && 
+    typeof coord.lng === 'number' &&
+    !isNaN(coord.lat) && 
+    !isNaN(coord.lng) &&
+    coord.lat >= -90 && coord.lat <= 90 &&
+    coord.lng >= -180 && coord.lng <= 180
+  );
+
+  // Usar apenas coordenadas válidas
+  const routeToShow = validRouteCoords.length >= 2 ? validRouteCoords : [];
 
   return (
     <Box sx={{ width: '100%', position: 'relative' }}>
@@ -125,11 +136,20 @@ const MapPatnerMap: React.FC<MapPatnerProps> = ({
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          {routeToShow && routeToShow.length >= 2 && (
-            <Polyline
-              positions={routeToShow.map(coord => [coord.lat, coord.lng])}
-              pathOptions={{ color: 'blue', weight: 4, opacity: 0.8 }}
-            />
+          {routeToShow.length >= 2 && (
+            <>
+              {/* Linha da rota */}
+              <Polyline
+                positions={routeToShow.map(coord => [coord.lat, coord.lng])}
+                pathOptions={{ 
+                  color: 'blue', 
+                  weight: 4, 
+                  opacity: 0.8,
+                  lineCap: 'round',
+                  lineJoin: 'round'
+                }}
+              />
+            </>
           )}
           {children}
           {ambulancePosition && (
