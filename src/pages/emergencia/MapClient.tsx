@@ -71,16 +71,14 @@ const MapPatnerMap: React.FC<MapPatnerProps> = ({
     return <div>Aguardando localização...</div>;
   }
 
-  // Usar a rota fornecida sem modificações (será calculada dinamicamente no componente pai)
   const routeToShow = routeCoords;
-  
-  // Determinar o centro do mapa: usar o center passado como prop
   const mapCenter = center;
   
   console.log('[MapClient] Renderizando mapa com coordenadas:', {
     center: mapCenter,
     patientPosition,
-    ambulancePosition
+    ambulancePosition,
+    routeLength: routeToShow?.length
   });
 
   return (
@@ -108,22 +106,39 @@ const MapPatnerMap: React.FC<MapPatnerProps> = ({
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          {/* Só mostra a rota se há ambulância, paciente e rota válida */}
-          {ambulancePosition && patientPosition && routeToShow && routeToShow.length >= 2 && (
-            <Polyline
-              positions={routeToShow.map(coord => [coord.lat, coord.lng])}
-              pathOptions={{ color: 'blue', weight: 4 }}
-            />
-          )}
-          {children}
           
-          {/* Componente para ajustar bounds automaticamente - só quando há ambulância E paciente e rota */}
-          {ambulancePosition && patientPosition && routeToShow && routeToShow.length >= 2 && (
+          {/* Sempre mostra o componente FitBoundsToPositions se tiver ambas as posições */}
+          {ambulancePosition && patientPosition && (
             <FitBoundsToPositions 
               ambulancePosition={ambulancePosition} 
               patientPosition={patientPosition} 
             />
           )}
+
+          {ambulancePosition && patientPosition && routeToShow && routeToShow.length >= 2 && (
+            <>
+              {/* Linha da rota */}
+              <Polyline
+                positions={routeToShow.map(coord => [coord.lat, coord.lng])}
+                pathOptions={{ color: 'blue', weight: 4, opacity: 0.8 }}
+              />
+              {/* Linha reta entre cliente e socorrista */}
+              <Polyline
+                positions={[
+                  [ambulancePosition.lat, ambulancePosition.lng],
+                  [patientPosition.lat, patientPosition.lng]
+                ]}
+                pathOptions={{ 
+                  color: '#666',
+                  weight: 2,
+                  opacity: 0.5,
+                  dashArray: '5, 10'
+                }}
+              />
+            </>
+          )}
+          
+          {children}
           
           {ambulancePosition && (
             <Marker position={ambulancePosition} icon={ambulanceLeafletIcon}>
@@ -171,7 +186,26 @@ function FitBoundsToPositions({
       [ambulancePosition.lat, ambulancePosition.lng],
       [patientPosition.lat, patientPosition.lng]
     ]);
-    map.fitBounds(bounds, { padding: [50, 50] });
+    
+    // Adiciona padding maior e força o update do mapa
+    const padding: [number, number] = [100, 100];
+    map.fitBounds(bounds, { 
+      padding,
+      maxZoom: 15, // Limita o zoom máximo
+      animate: true,
+      duration: 0.5 // Meio segundo de animação
+    });
+
+    // Força uma atualização do mapa após um pequeno delay
+    setTimeout(() => {
+      map.invalidateSize();
+      map.fitBounds(bounds, { 
+        padding,
+        maxZoom: 15,
+        animate: true,
+        duration: 0.5
+      });
+    }, 100);
   }, [ambulancePosition, patientPosition, map]);
   return null;
 }

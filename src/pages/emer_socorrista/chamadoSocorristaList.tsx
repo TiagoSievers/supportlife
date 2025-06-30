@@ -11,6 +11,13 @@ const ativarSinoNotificacao = () => {
   window.dispatchEvent(event);
 };
 
+// Função para desativar o sino no Navbar
+const desativarSinoNotificacao = () => {
+  // Emitir um evento customizado que o Navbar vai escutar
+  const event = new CustomEvent('desativarNotificacao');
+  window.dispatchEvent(event);
+};
+
 export interface Chamado {
   id: string;
   cliente_id: string;
@@ -105,6 +112,9 @@ const ChamadoSocorristaList: React.FC = () => {
       const accessToken = localStorage.getItem('accessToken');
       if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
       if (!accessToken) throw new Error('accessToken não encontrado no localStorage');
+
+      // Desativar o sino quando abrir o modal
+      desativarSinoNotificacao();
 
       // Buscar dados atualizados do chamado para o log
       const chamadoResp = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {

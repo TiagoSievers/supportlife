@@ -44,10 +44,16 @@ const Navbar: React.FC = () => {
       });
     };
 
+    const handleDesativarNotificacao = () => {
+      setHasNewChamado(false);
+    };
+
     window.addEventListener('novaNotificacao', handleNovaNotificacao);
+    window.addEventListener('desativarNotificacao', handleDesativarNotificacao);
 
     return () => {
       window.removeEventListener('novaNotificacao', handleNovaNotificacao);
+      window.removeEventListener('desativarNotificacao', handleDesativarNotificacao);
     };
   }, []);
 
