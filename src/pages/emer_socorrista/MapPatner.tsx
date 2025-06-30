@@ -49,7 +49,39 @@ const defaultLeafletIcon = L.icon({
   shadowSize: [41, 41]
 });
 
-const center = { lat: -23.55052, lng: -46.633308 };
+// Componente para controlar o centro e zoom do mapa
+const MapController: React.FC<{
+  ambulancePosition?: { lat: number; lng: number };
+  center: { lat: number; lng: number };
+  routeCoords?: { lat: number; lng: number }[];
+}> = ({ ambulancePosition, center, routeCoords }) => {
+  const map = useMap();
+
+  React.useEffect(() => {
+    if (!ambulancePosition || !routeCoords || routeCoords.length < 2) return;
+
+    // Criar bounds incluindo ambulância e destino
+    const bounds = new L.LatLngBounds(
+      [
+        [ambulancePosition.lat, ambulancePosition.lng],
+        [center.lat, center.lng]
+      ]
+    );
+
+    // Adicionar pontos da rota ao bounds
+    routeCoords.forEach(coord => {
+      bounds.extend([coord.lat, coord.lng]);
+    });
+
+    // Ajustar o mapa para mostrar todos os pontos com padding
+    map.fitBounds(bounds, {
+      padding: [50, 50],
+      maxZoom: 16 // Limitar o zoom máximo para não ficar muito próximo
+    });
+  }, [map, ambulancePosition, center, routeCoords]);
+
+  return null;
+};
 
 const MapPatnerNavigation: React.FC<MapPatnerProps> = (props) => {
   return <MapPatnerMap {...props} />;
@@ -63,8 +95,6 @@ const MapPatnerMap: React.FC<MapPatnerProps> = ({
   children,
   ambulancePosition
 }) => {
-
-
   if (!center) return null;
 
   // Usar a rota fornecida sem modificações (será calculada dinamicamente no componente pai)
@@ -98,20 +128,27 @@ const MapPatnerMap: React.FC<MapPatnerProps> = ({
           {routeToShow && routeToShow.length >= 2 && (
             <Polyline
               positions={routeToShow.map(coord => [coord.lat, coord.lng])}
-              pathOptions={{ color: 'blue', weight: 4 }}
+              pathOptions={{ color: 'blue', weight: 4, opacity: 0.8 }}
             />
           )}
           {children}
-          <Marker position={ambulancePosition || center} icon={ambulanceLeafletIcon}>
-            <Popup>
-              Marcador de ambulância personalizado!
-            </Popup>
-          </Marker>
+          {ambulancePosition && (
+            <Marker position={ambulancePosition} icon={ambulanceLeafletIcon}>
+              <Popup>
+                Ambulância
+              </Popup>
+            </Marker>
+          )}
           <Marker position={center} icon={defaultLeafletIcon}>
             <Popup>
               Local do chamado (paciente)
             </Popup>
           </Marker>
+          <MapController 
+            ambulancePosition={ambulancePosition}
+            center={center}
+            routeCoords={routeToShow}
+          />
         </MapContainer>
       </Paper>
     </Box>

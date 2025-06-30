@@ -166,13 +166,15 @@ const Emergency: React.FC = () => {
       setLoading(true);
       setError(null);
       try {
-      const clienteId = localStorage.getItem('clienteId');
-      if (!clienteId) throw new Error('Cliente não identificado');
+        const clienteId = localStorage.getItem('clienteId');
+        const chamadoId = localStorage.getItem('chamadoId');
+        
+        if (!clienteId) throw new Error('Cliente não identificado');
         
         const { data, error } = await supabase
           .from('chamado')
           .select('*')
-          .eq('cliente_id', clienteId)
+          .eq(chamadoId ? 'id' : 'cliente_id', chamadoId || clienteId)
           .order('data_abertura', { ascending: false })
           .limit(1);
         
@@ -208,46 +210,81 @@ const Emergency: React.FC = () => {
     fetchChamadoInicial();
   }, []);
 
-  // Realtime subscription para mudanças no chamado (como EmergencyFamily)
+  // Realtime subscription para mudanças no chamado
   useEffect(() => {
     const clienteId = localStorage.getItem('clienteId');
-    if (!clienteId) return;
+    if (!chamado?.id || !clienteId) {
+      console.log('[EMERGENCY] Sem chamado ou cliente ID para configurar realtime');
+      return;
+    }
 
-    console.log('[EMERGENCY] Configurando subscription realtime...');
-    
-    const subscription = supabase
-      .channel('emergency-chamado-changes')
+    console.log('[EMERGENCY] Iniciando configuração realtime:', {
+      chamadoId: chamado.id,
+      clienteId: clienteId,
+      status: chamado.status
+    });
+
+    // Criando canal específico para este chamado
+    const channelA = supabase.channel('chamados')
       .on(
         'postgres_changes',
         {
-          event: '*',
+          event: 'UPDATE',
           schema: 'public',
           table: 'chamado',
-          filter: `cliente_id=eq.${clienteId}`
+          filter: `id=eq.${chamado.id}`
         },
-        (payload) => {
-          console.log('[EMERGENCY] Mudança no chamado via realtime:', payload);
+        async (payload) => {
+          console.log('[EMERGENCY] Atualização recebida:', payload);
           
-          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
-            const novoChamado = payload.new as Chamado;
-            setChamado(novoChamado);
-            
-            // Atualiza posição do socorrista se mudou
-            if (novoChamado.socorrista_id && novoChamado.posicao_inicial_socorrista) {
-              const [lat, lng] = novoChamado.posicao_inicial_socorrista.split(',').map(Number);
-              setSocorristaPos({ lat, lng });
-              console.log('[EMERGENCY] Posição socorrista atualizada via realtime:', { lat, lng });
+          try {
+            // Buscar dados atualizados do chamado
+            const { data: chamadoAtualizado, error } = await supabase
+              .from('chamado')
+              .select('*')
+              .eq('id', chamado.id)
+              .single();
+
+            if (error) throw error;
+
+            if (chamadoAtualizado) {
+              console.log('[EMERGENCY] Dados atualizados:', chamadoAtualizado);
+              setChamado(chamadoAtualizado);
+
+              // Atualiza posição do socorrista se disponível
+              if (chamadoAtualizado.socorrista_id && chamadoAtualizado.posicao_inicial_socorrista) {
+                const [lat, lng] = chamadoAtualizado.posicao_inicial_socorrista.split(',').map(Number);
+                setSocorristaPos({ lat, lng });
+                console.log('[EMERGENCY] Nova posição do socorrista:', { lat, lng });
+              }
+
+              // Se status mudou, mostra notificação
+              if (chamadoAtualizado.status !== chamado.status) {
+                setNotification({
+                  open: true,
+                  message: `Status atualizado para: ${chamadoAtualizado.status}`,
+                  severity: 'info'
+                });
+              }
             }
+          } catch (error) {
+            console.error('[EMERGENCY] Erro ao atualizar chamado:', error);
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log(`[EMERGENCY] Status da subscription: ${status}`);
+        if (status === 'SUBSCRIBED') {
+          console.log('[EMERGENCY] Realtime configurado com sucesso');
+        }
+      });
 
+    // Cleanup function
     return () => {
-      console.log('[EMERGENCY] Removendo subscription realtime');
-      subscription.unsubscribe();
+      console.log('[EMERGENCY] Limpando subscription realtime');
+      supabase.removeChannel(channelA);
     };
-  }, []);
+  }, [chamado?.id, chamado?.status]); // Adicionamos status nas dependências para comparação
 
   // Recalcula rota sempre que a posição do socorrista muda (como EmergencyFamily)
   useEffect(() => {
@@ -354,7 +391,10 @@ const Emergency: React.FC = () => {
 
   // Buscar familiares reais ao montar
   useEffect(() => {
-    buscarFamiliares()
+    const clienteId = localStorage.getItem('clienteId');
+    if (!clienteId) return;
+
+    buscarFamiliares(clienteId)
       .then((familiares) => {
         const members = familiares
           .filter((f: any) => !f.deletado)

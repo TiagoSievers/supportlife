@@ -76,7 +76,7 @@ const SOSButton: React.FC = () => {
 
     // Obter localização do usuário
     let localizacao = '';
-    let endereco_textual = '';
+    let endereco_textual: string | null = '';
     let latitude = null;
     let longitude = null;
     try {
@@ -123,17 +123,27 @@ const SOSButton: React.FC = () => {
       for (let i = 0; i < tentativas; i++) {
         try {
           const endereco = await getAddressFromCoords(lat, lon);
-          if (endereco) return endereco;
+          if (endereco && endereco.trim() !== '') return endereco;
+          console.log(`Tentativa ${i + 1}: Endereço vazio, tentando novamente...`);
         } catch (e) {
-          // ignora erro e tenta novamente
+          console.warn(`Tentativa ${i + 1} falhou:`, e);
         }
+        if (i < tentativas - 1) { // Não espera na última tentativa
         await new Promise(res => setTimeout(res, delayMs));
+        }
       }
-      return '';
+      return null; // Retorna null em vez de string vazia para indicar falha
     }
 
     if (latitude && longitude) {
       endereco_textual = await tentarBuscarEndereco(latitude, longitude);
+      if (!endereco_textual) {
+        alert('Não foi possível obter o endereço completo. Por favor, tente novamente ou entre em contato com o suporte.');
+        return;
+      }
+    } else {
+      alert('É necessário permitir o acesso à localização para continuar.');
+      return;
     }
     console.log('Endereço textual obtido:', endereco_textual);
 
@@ -143,6 +153,13 @@ const SOSButton: React.FC = () => {
       endereco_textual,
       status: 'Pendente'
     };
+
+    // Validação final antes de enviar
+    if (!endereco_textual || endereco_textual.trim() === '') {
+      console.error('Tentando enviar chamado sem endereço textual');
+      alert('Erro ao obter o endereço. Por favor, tente novamente.');
+      return;
+    }
 
     console.log('Enviando chamado (curl style):', chamadoData);
 
@@ -178,6 +195,13 @@ const SOSButton: React.FC = () => {
         const data = await res.json();
         chamadoId = data && data[0] && data[0].id ? data[0].id : null;
       }
+
+      // Armazenar o ID do chamado no localStorage
+      if (chamadoId) {
+        localStorage.setItem('chamadoId', chamadoId.toString());
+        console.log('ID do chamado armazenado no localStorage:', chamadoId);
+      }
+
       // Criar log_chamado
       if (chamadoId) {
         const logData = {

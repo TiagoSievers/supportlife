@@ -78,12 +78,15 @@ const AdminPanel: React.FC = () => {
 
   // ===== handleLogout =====
   const handleLogout = async () => {
-    await logoutSupabase();
-    localStorage.removeItem('userToken');
-    localStorage.removeItem('userRole');
-    localStorage.removeItem('userData');
-    console.log('Logout realizado, localStorage limpo:', localStorage);
-    navigate('/');
+    try {
+      await logoutSupabase();
+      localStorage.clear(); // Limpa todo o localStorage de uma vez
+      window.location.href = '/'; // Força o redirecionamento para a raiz
+    } catch (error) {
+      console.error('Erro durante logout:', error);
+      localStorage.clear();
+      window.location.href = '/';
+    }
   };
 
   // ===== handleEditClient =====

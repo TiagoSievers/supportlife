@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Box, Typography, Button, Container } from '@mui/material';
 import {
@@ -38,93 +38,124 @@ const MenuButton: React.FC<{
   </Link>
 );
 
-const FALLBACK_COORDS = { lat: -23.5505, lng: -46.6333 };
-
-const getLocationByIP = async () => {
-  try {
-    const response = await fetch('https://get.geojs.io/v1/ip/geo.json');
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
-    if (!data.latitude || !data.longitude) {
-      throw new Error('Invalid IP location data received from GeoJS');
-    }
-    return {
-      lat: parseFloat(data.latitude),
-      lng: parseFloat(data.longitude),
-      accuracy: 5000,
-      source: 'IP'
-    };
-  } catch (error) {
-    console.error('Error getting location by IP (GeoJS):', error);
-    return null;
-  }
-};
-
 const Home: React.FC = () => {
   const [localizacao, setLocalizacao] = useState<string>('');
   const [precisao, setPrecisao] = useState<number | null>(null);
   const [fonte, setFonte] = useState<string>('');
   const [erro, setErro] = useState<string>('');
+  const [obtendoLocalizacao, setObtendoLocalizacao] = useState<boolean>(false);
+  const [buscaAutomatica, setBuscaAutomatica] = useState<boolean>(true);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    const obterLocalizacao = () => {
-      if (navigator.geolocation) {
+  // Configurações de precisão
+  const PRECISAO_DESEJADA = 20; // metros
+  const TEMPO_ESPERA = 3000; // 3 segundos para cada tentativa
+  const INTERVALO_BUSCA = 2000; // 2 segundos entre buscas
+
+  const obterLocalizacao = async (): Promise<void> => {
+    if (obtendoLocalizacao) return;
+    
+    if (!navigator.geolocation) {
+      setErro('Seu navegador não suporta geolocalização de alta precisão. Por favor, use um navegador mais recente.');
+      return;
+    }
+
+    setObtendoLocalizacao(true);
+    console.log('Iniciando busca de localização...');
+
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(
-          async (position) => {
-            setLocalizacao(`${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`);
-            setPrecisao(position.coords.accuracy);
-            setFonte('GPS/Navegador');
-            setErro('');
-          },
-          async (error) => {
-            let msg = 'Não foi possível obter a localização precisa. ';
-            if (error.code === error.PERMISSION_DENIED) {
-              msg += 'Permissão negada. ';
-            }
-            msg += 'Tentando localização aproximada por IP...';
-            setErro(msg);
-            // Fallback por IP
-            const ipLocation = await getLocationByIP();
-            if (ipLocation) {
-              setLocalizacao(`${ipLocation.lat.toFixed(6)}, ${ipLocation.lng.toFixed(6)}`);
-              setPrecisao(ipLocation.accuracy);
-              setFonte('IP');
-              setErro('Localização aproximada por IP.');
-            } else {
-              setLocalizacao(`${FALLBACK_COORDS.lat}, ${FALLBACK_COORDS.lng}`);
-              setPrecisao(null);
-              setFonte('Padrão');
-              setErro('Não foi possível obter sua localização. Usando localização padrão (São Paulo).');
-            }
-          },
+          resolve,
+          reject,
           {
             enableHighAccuracy: true,
-            timeout: 10000,
+            timeout: TEMPO_ESPERA,
             maximumAge: 0
           }
         );
+      });
+
+      const novaPrecisao = position.coords.accuracy;
+      const novaLocalizacao = `${position.coords.latitude.toFixed(6)}, ${position.coords.longitude.toFixed(6)}`;
+      
+      console.log('=== Dados da Localização ===');
+      console.log(`Timestamp: ${new Date().toISOString()}`);
+      console.log(`Coordenadas: ${novaLocalizacao}`);
+      console.log(`Precisão atual: ${novaPrecisao.toFixed(2)} metros`);
+      console.log(`Precisão desejada: ${PRECISAO_DESEJADA} metros`);
+      console.log(`Diferença para precisão desejada: ${(novaPrecisao - PRECISAO_DESEJADA).toFixed(2)} metros`);
+      console.log(`Alta precisão atingida: ${novaPrecisao <= PRECISAO_DESEJADA ? 'SIM' : 'NÃO'}`);
+      console.log('========================');
+
+      setLocalizacao(novaLocalizacao);
+      setPrecisao(novaPrecisao);
+      setFonte(novaPrecisao <= PRECISAO_DESEJADA ? 'GPS (Alta Precisão)' : 'GPS');
+      setErro('');
+
+      // Se atingiu a precisão desejada, para a busca automática
+      if (novaPrecisao <= PRECISAO_DESEJADA) {
+        console.log('✅ Precisão ideal atingida, parando busca automática');
+        setBuscaAutomatica(false);
       } else {
-        setErro('Seu navegador não suporta geolocalização. Tentando localização aproximada por IP...');
-        (async () => {
-          const ipLocation = await getLocationByIP();
-          if (ipLocation) {
-            setLocalizacao(`${ipLocation.lat.toFixed(6)}, ${ipLocation.lng.toFixed(6)}`);
-            setPrecisao(ipLocation.accuracy);
-            setFonte('IP');
-            setErro('Localização aproximada por IP.');
-          } else {
-            setLocalizacao(`${FALLBACK_COORDS.lat}, ${FALLBACK_COORDS.lng}`);
-            setPrecisao(null);
-            setFonte('Padrão');
-            setErro('Não foi possível obter sua localização. Usando localização padrão (São Paulo).');
-          }
-        })();
+        console.log(`⏳ Continuando busca. Faltam ${(novaPrecisao - PRECISAO_DESEJADA).toFixed(2)} metros de precisão`);
+      }
+      
+    } catch (error: any) {
+      console.error('❌ Erro na obtenção da localização:', error);
+      let mensagemErro = 'Erro ao obter localização. ';
+      
+      if (error.code === 1) {
+        mensagemErro += 'Por favor, permita o acesso à sua localização nas configurações do navegador.';
+        setBuscaAutomatica(false); // Para a busca automática se não tiver permissão
+        console.log('❌ Busca automática parada: Sem permissão de localização');
+      } else if (error.code === 2) {
+        mensagemErro += 'Serviço de localização indisponível. Verifique se o GPS está ativado.';
+        setBuscaAutomatica(false); // Para a busca automática se GPS estiver desativado
+        console.log('❌ Busca automática parada: GPS desativado');
+      } else if (error.code === 3) {
+        mensagemErro += 'Tempo esgotado. Continuando busca...';
+        console.log('⚠️ Timeout na busca de localização, tentando novamente...');
+      }
+      
+      setErro(mensagemErro);
+      if (error.code === 1 || error.code === 2) {
+        setLocalizacao('');
+        setPrecisao(null);
+        setFonte('');
+      }
+    } finally {
+      setObtendoLocalizacao(false);
+    }
+  };
+
+  // Inicia/para o intervalo de busca automática
+  useEffect(() => {
+    if (buscaAutomatica) {
+      console.log('🔄 Iniciando busca automática de localização');
+      void obterLocalizacao(); // Primeira busca imediata
+      intervalRef.current = setInterval(() => {
+        void obterLocalizacao();
+      }, INTERVALO_BUSCA);
+    } else if (intervalRef.current) {
+      console.log('⏹️ Parando busca automática de localização');
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    // Cleanup function
+    return () => {
+      if (intervalRef.current) {
+        console.log('🧹 Limpando intervalo de busca automática');
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
     };
-    obterLocalizacao();
-  }, []);
+  }, [buscaAutomatica]);
+
+  const toggleBuscaAutomatica = () => {
+    setBuscaAutomatica(prev => !prev);
+  };
 
   return (
     <Container maxWidth="sm" sx={{ 
@@ -177,12 +208,21 @@ const Home: React.FC = () => {
           <Typography variant="body2" color="text.secondary">
             Sua localização atual:
           </Typography>
-          <Typography variant="body2" color="text.primary" sx={{ fontWeight: 'medium' }}>
-            {localizacao}
-          </Typography>
-          {precisao && (
-            <Typography variant="caption" color="text.secondary">
-              Precisão: {Math.round(precisao)} metros ({fonte})
+          {localizacao ? (
+            <>
+              <Typography variant="body2" color="text.primary" sx={{ fontWeight: 'medium' }}>
+                {localizacao}
+              </Typography>
+              {precisao && (
+                <Typography variant="caption" color="text.secondary">
+                  Precisão: {Math.round(precisao)} metros ({fonte})
+                  {buscaAutomatica && ' - Buscando melhor precisão...'}
+                </Typography>
+              )}
+            </>
+          ) : (
+            <Typography variant="body2" color="error" sx={{ fontWeight: 'medium' }}>
+              {obtendoLocalizacao ? 'Obtendo localização...' : 'Localização não disponível'}
             </Typography>
           )}
           {erro && (
@@ -190,6 +230,21 @@ const Home: React.FC = () => {
               {erro}
             </Typography>
           )}
+          {/* Botões de controle */}
+          <Box sx={{ mt: 2, display: 'flex', gap: 1, justifyContent: 'center' }}>
+            {!buscaAutomatica && precisao && precisao > PRECISAO_DESEJADA && (
+              <Button
+                variant="text"
+                size="small"
+                onClick={() => {
+                  setBuscaAutomatica(true);
+                }}
+                color="primary"
+              >
+                Buscar melhor precisão
+              </Button>
+            )}
+          </Box>
         </Box>
       </Box>
     </Container>

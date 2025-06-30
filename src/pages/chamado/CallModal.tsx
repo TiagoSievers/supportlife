@@ -43,8 +43,35 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
       setNotificados([]);
       setTelefoneCliente(undefined);
       setLoadingFamiliares(true);
-      buscarFamiliares()
-        .then((familiares) => {
+
+      // Primeiro buscar o cliente_id do chamado
+      const fetchFamiliares = async () => {
+        try {
+          if (!chamadoId) return;
+          const url = process.env.REACT_APP_SUPABASE_URL;
+          const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+          const accessToken = localStorage.getItem('accessToken');
+          
+          if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
+          if (!accessToken) throw new Error('accessToken não encontrado no localStorage');
+          
+          // Buscar o chamado atual para pegar o cliente_id
+          const chamadoResp = await fetch(`${url}/rest/v1/chamado?id=eq.${chamadoId}`, {
+            headers: {
+              'apikey': serviceKey,
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            }
+          });
+          
+          const chamadoData = await chamadoResp.json();
+          if (!chamadoData[0] || !chamadoData[0].cliente_id) return;
+          
+          const clienteId = chamadoData[0].cliente_id;
+          
+          // Agora buscar os familiares com o cliente_id
+          const familiares = await buscarFamiliares(clienteId);
+          
           // Filtrar apenas os não deletados
           const members = familiares
             .filter((f: any) => !f.deletado)
@@ -56,14 +83,19 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
               email: f.email,
               isEmergencyContact: f.contato_emergencia || false,
             }));
+          
           setFamilyMembers(members);
-        })
-        .catch(() => {
+        } catch (error) {
+          console.error('Erro ao buscar familiares:', error);
           setFamilyMembers([]);
-        })
-        .finally(() => setLoadingFamiliares(false));
+        } finally {
+          setLoadingFamiliares(false);
+        }
+      };
 
-      // Buscar lista de chamados do cliente (corrigido: buscar chamado pelo id, depois buscar chamados do cliente)
+      fetchFamiliares();
+
+      // Buscar lista de chamados do cliente
       const fetchChamadosCliente = async () => {
         setLoadingChamadosCliente(true);
         try {
@@ -252,7 +284,12 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
   }
 
   return (
-    <Dialog open={open} onClose={onClose}>
+    <Dialog 
+      open={open} 
+      onClose={onClose}
+      maxWidth="sm"
+      fullWidth
+    >
       <DialogTitle>
         Chamado #{chamadoId}
       </DialogTitle>
@@ -283,101 +320,97 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
             )}
           </>
         )}
-        {(status !== 'Aceito / Em andamento') && (
-          <Button
-            onClick={handleAceitar}
-            color="success"
-            variant="contained"
-            disabled={loading || !chamadoId}
-            sx={{ mt: 2 }}
-            fullWidth
-          >
-            Aceitar o chamado
-          </Button>
-        )}
-        {(status !== 'Aceito / Em andamento') && (
-          <Button
-            onClick={async () => {
-              console.log('Botão Em análise clicado');
-              if (!chamadoId) return;
-              const url = process.env.REACT_APP_SUPABASE_URL;
-              const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-              const accessToken = localStorage.getItem('accessToken');
-              const administradorId = localStorage.getItem('administradorId');
-              if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
-              if (!accessToken) throw new Error('accessToken não encontrado no localStorage');
-              if (!administradorId) throw new Error('administradorId não encontrado no localStorage');
-              const headers = {
-                'apikey': serviceKey,
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-              };
-              const endpoint = `${url}/rest/v1/chamado?select=*&id=eq.${chamadoId}`;
-              const body = JSON.stringify({ status: 'Em análise', operador_id: administradorId });
-              try {
-                const response = await fetch(endpoint, {
-                  method: 'PATCH',
-                  headers,
-                  body
-                });
-                if (response.ok) {
-                  // Buscar dados do chamado atualizado
-                  const chamadoResp = await fetch(`${url}/rest/v1/chamado?id=eq.${chamadoId}`, { headers });
-                  const chamadoData = await chamadoResp.json();
-                  if (chamadoData && chamadoData[0]) {
-                    const logData = {
-                      chamado_id: chamadoData[0].id,
-                      cliente_id: chamadoData[0].cliente_id,
-                      localizacao: chamadoData[0].localizacao,
-                      endereco_textual: chamadoData[0].endereco_textual,
-                      status: chamadoData[0].status,
-                      operador_id: chamadoData[0].operador_id,
-                      socorrista_id: chamadoData[0].socorrista_id,
-                      data_abertura: chamadoData[0].data_abertura,
-                      data_fechamento: chamadoData[0].data_fechamento,
-                      descricao: chamadoData[0].descricao,
-                      prioridade: chamadoData[0].prioridade,
-                      notificacao_familiares: chamadoData[0].notificacao_familiares,
-                      posicao_inicial_socorrista: chamadoData[0].posicao_inicial_socorrista
-                    };
-                    await fetch(`${url}/rest/v1/log_chamado`, {
-                      method: 'POST',
-                      headers,
-                      body: JSON.stringify(logData)
-                    });
-                  }
+        <Button
+          onClick={handleAceitar}
+          color="success"
+          variant="contained"
+          disabled={loading || !chamadoId || status === 'Aceito / Em andamento'}
+          sx={{ mt: 2 }}
+          fullWidth
+        >
+          {status === 'Aceito / Em andamento' ? 'Chamado Aceito' : 'Aceitar o chamado'}
+        </Button>
+        <Button
+          onClick={async () => {
+            console.log('Botão Em análise clicado');
+            if (!chamadoId) return;
+            const url = process.env.REACT_APP_SUPABASE_URL;
+            const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+            const accessToken = localStorage.getItem('accessToken');
+            const administradorId = localStorage.getItem('administradorId');
+            if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
+            if (!accessToken) throw new Error('accessToken não encontrado no localStorage');
+            if (!administradorId) throw new Error('administradorId não encontrado no localStorage');
+            const headers = {
+              'apikey': serviceKey,
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            };
+            const endpoint = `${url}/rest/v1/chamado?select=*&id=eq.${chamadoId}`;
+            const body = JSON.stringify({ status: 'Em análise', operador_id: administradorId });
+            try {
+              const response = await fetch(endpoint, {
+                method: 'PATCH',
+                headers,
+                body
+              });
+              if (response.ok) {
+                // Buscar dados do chamado atualizado
+                const chamadoResp = await fetch(`${url}/rest/v1/chamado?id=eq.${chamadoId}`, { headers });
+                const chamadoData = await chamadoResp.json();
+                if (chamadoData && chamadoData[0]) {
+                  const logData = {
+                    chamado_id: chamadoData[0].id,
+                    cliente_id: chamadoData[0].cliente_id,
+                    localizacao: chamadoData[0].localizacao,
+                    endereco_textual: chamadoData[0].endereco_textual,
+                    status: chamadoData[0].status,
+                    operador_id: chamadoData[0].operador_id,
+                    socorrista_id: chamadoData[0].socorrista_id,
+                    data_abertura: chamadoData[0].data_abertura,
+                    data_fechamento: chamadoData[0].data_fechamento,
+                    descricao: chamadoData[0].descricao,
+                    prioridade: chamadoData[0].prioridade,
+                    notificacao_familiares: chamadoData[0].notificacao_familiares,
+                    posicao_inicial_socorrista: chamadoData[0].posicao_inicial_socorrista
+                  };
+                  await fetch(`${url}/rest/v1/log_chamado`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(logData)
+                  });
                 }
-                if (response.status === 204) {
-                  console.log('[PATCH chamado] Sucesso: No Content (204)');
-                  setSnackbar({ open: true, message: 'Status do chamado alterado para Em análise!', severity: 'success' });
-                } else {
-                  const text = await response.text();
-                  if (text) {
-                    try {
-                      const data = JSON.parse(text);
-                      console.log('[PATCH chamado] Resposta:', data);
-                      setSnackbar({ open: true, message: 'Status do chamado alterado para Em análise!', severity: 'success' });
-                    } catch (jsonErr) {
-                      console.log('[PATCH chamado] Resposta não JSON:', text);
-                    }
-                  } else {
-                    console.log('[PATCH chamado] Sucesso: resposta vazia');
-                    setSnackbar({ open: true, message: 'Status do chamado alterado para Em análise!', severity: 'success' });
-                  }
-                }
-              } catch (err) {
-                console.error('[PATCH chamado] Erro:', err);
               }
-            }}
-            color="info"
-            variant="contained"
-            disabled={loading || !chamadoId}
-            sx={{ mt: 2 }}
-            fullWidth
-          >
-            Em análise
-          </Button>
-        )}
+              if (response.status === 204) {
+                console.log('[PATCH chamado] Sucesso: No Content (204)');
+                setSnackbar({ open: true, message: 'Status do chamado alterado para Em análise!', severity: 'success' });
+              } else {
+                const text = await response.text();
+                if (text) {
+                  try {
+                    const data = JSON.parse(text);
+                    console.log('[PATCH chamado] Resposta:', data);
+                    setSnackbar({ open: true, message: 'Status do chamado alterado para Em análise!', severity: 'success' });
+                  } catch (jsonErr) {
+                    console.log('[PATCH chamado] Resposta não JSON:', text);
+                  }
+                } else {
+                  console.log('[PATCH chamado] Sucesso: resposta vazia');
+                  setSnackbar({ open: true, message: 'Status do chamado alterado para Em análise!', severity: 'success' });
+                }
+              }
+            } catch (err) {
+              console.error('[PATCH chamado] Erro:', err);
+            }
+          }}
+          color="info"
+          variant="contained"
+          disabled={loading || !chamadoId || status === 'Em análise' || status === 'Aceito / Em andamento'}
+          sx={{ mt: 2 }}
+          fullWidth
+        >
+          {status === 'Em análise' ? 'Chamado Em Análise' : 'Em análise'}
+        </Button>
         <Button
           onClick={async () => {
             console.log('Botão Finalizar chamado clicado');

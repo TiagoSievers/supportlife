@@ -85,47 +85,104 @@ const ChamadoModal: React.FC<ChamadoModalProps> = ({ open, chamado, onClose, onF
   }, [chamado, routeDuration]);
 
   useEffect(() => {
+    let watchId: number;
+    
     if (open) {
       if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
+        // Configurações para maior precisão
+        const options = {
+          enableHighAccuracy: true,
+          timeout: 5000,
+          maximumAge: 0
+        };
+
+        watchId = navigator.geolocation.watchPosition(
           (position) => {
-            setUserLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+            setUserLocation({ 
+              lat: position.coords.latitude, 
+              lng: position.coords.longitude 
+            });
+            console.log('Localização atualizada:', position.coords.latitude, position.coords.longitude);
           },
-          () => setUserLocation(null),
-          { enableHighAccuracy: true, timeout: 5000 }
+          (error) => {
+            console.error('Erro ao obter localização:', error);
+            setUserLocation(null);
+          },
+          options
         );
       } else {
         setUserLocation(null);
       }
     }
+
+    // Cleanup: remove o watch quando o componente é desmontado
+    return () => {
+      if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
   }, [open]);
 
   useEffect(() => {
+    let isSubscribed = true;
+
     const fetchRoute = async () => {
       if (userLocation && chamado && chamado.localizacao) {
-        const [lat, lon] = chamado.localizacao.split(',').map(Number);
-        const url = `https://router.project-osrm.org/route/v1/driving/${userLocation.lng},${userLocation.lat};${lon},${lat}?overview=full&geometries=geojson`;
+        const [destinoLat, destinoLng] = chamado.localizacao.split(',').map(Number);
+        // Corrigindo a ordem das coordenadas: origem -> destino
+        const url = `https://router.project-osrm.org/route/v1/driving/${userLocation.lng},${userLocation.lat};${destinoLng},${destinoLat}?overview=full&geometries=geojson&steps=true`;
         try {
+          console.log('Buscando nova rota...', {
+            origem: { lat: userLocation.lat, lng: userLocation.lng },
+            destino: { lat: destinoLat, lng: destinoLng }
+          });
+          
           const response = await fetch(url);
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
           const data = await response.json();
-          if (data.routes && data.routes[0]) {
-            setRouteCoords(data.routes[0].geometry.coordinates.map(([lng, lat]: [number, number]) => ({ lat, lng })));
-            // Salvar duração em minutos
-            setRouteDuration(Math.ceil(data.routes[0].duration / 60));
+          
+          if (data.routes && data.routes[0] && isSubscribed) {
+            // Processando as coordenadas corretamente
+            const newRouteCoords = data.routes[0].geometry.coordinates.map(
+              ([lng, lat]: [number, number]) => ({ lat, lng })
+            );
+            const newDuration = Math.ceil(data.routes[0].duration / 60);
+            
+            console.log('Rota obtida com sucesso:', {
+              numPontos: newRouteCoords.length,
+              primeiroPonto: newRouteCoords[0],
+              ultimoPonto: newRouteCoords[newRouteCoords.length - 1]
+            });
+            
+            setRouteCoords(newRouteCoords);
+            setRouteDuration(newDuration);
+            console.log('Rota atualizada. Duração:', newDuration, 'minutos');
           } else {
+            console.warn('Nenhuma rota encontrada nos dados:', data);
             setRouteCoords([]);
             setRouteDuration(null);
           }
-        } catch {
+        } catch (error) {
+          console.error('Erro ao buscar rota:', error);
           setRouteCoords([]);
           setRouteDuration(null);
         }
       } else {
+        if (!userLocation) console.log('Aguardando localização do usuário...');
+        if (!chamado) console.log('Chamado não disponível...');
+        if (!chamado?.localizacao) console.log('Localização do chamado não disponível...');
         setRouteCoords([]);
         setRouteDuration(null);
       }
     };
+
     fetchRoute();
+
+    return () => {
+      isSubscribed = false;
+    };
   }, [userLocation, chamado]);
 
   function formatarDataHora(data: string) {
@@ -289,7 +346,7 @@ const ChamadoModal: React.FC<ChamadoModalProps> = ({ open, chamado, onClose, onF
                   ambulancePosition={userLocation || undefined}
                 />
                 <Typography sx={{ fontSize: 15, color: 'text.secondary', mb: 3, mt: 3 }}>
-                  <strong>Endereço:</strong> {chamado.endereco_textual || chamado.localizacao}
+                  <strong>Endereço:</strong> {chamado.endereco_textual || 'Endereço não disponível'}
                 </Typography>
               </Box>
             )}

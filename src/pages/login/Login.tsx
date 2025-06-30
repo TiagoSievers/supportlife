@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TextField, Button, Container, Typography, Box, CircularProgress } from '@mui/material';
 import { useNavigate, Link } from 'react-router-dom';
 import { login, recoverPassword, fetchUserByEmail, existsInCliente, existsInSocorrista, existsInAdministrador, getClienteByUserId, getSocorristaByUserId, getAdministradorByUserId, existsInFamiliar, getFamiliarByUserId } from './api';
@@ -11,6 +11,36 @@ const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  // Redirecionamento automático se já estiver autenticado
+  useEffect(() => {
+    const accessToken = localStorage.getItem('accessToken') || localStorage.getItem('userToken');
+    const userId = localStorage.getItem('userId');
+
+    if (!accessToken || !userId) {
+      // Limpar localStorage se tiver dados parciais
+      localStorage.clear();
+      return;
+    }
+
+    // Verificar e redirecionar baseado no tipo de usuário
+    if (localStorage.getItem('clienteId')) {
+      console.log('Redirecionando cliente autenticado para /home');
+      navigate('/home', { replace: true });
+    } else if (localStorage.getItem('socorristaId')) {
+      console.log('Redirecionando socorrista autenticado para /partner-emergencies');
+      navigate('/partner-emergencies', { replace: true });
+    } else if (localStorage.getItem('administradorId')) {
+      console.log('Redirecionando administrador autenticado para /admin-panel');
+      navigate('/admin-panel', { replace: true });
+    } else if (localStorage.getItem('familiarId')) {
+      console.log('Redirecionando familiar autenticado para /family-emergencies');
+      navigate('/family-emergencies', { replace: true });
+    } else {
+      // Se tem token e userId mas não tem tipo de usuário, limpar localStorage
+      localStorage.clear();
+    }
+  }, [navigate]);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();

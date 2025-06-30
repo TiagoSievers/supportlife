@@ -124,9 +124,9 @@ export async function criarFamiliar({ user_id, cliente_id, nome, parentesco, tel
 }
 
 // Busca todos os familiares
-export async function buscarFamiliares(): Promise<FamiliarParams[]> {
+export async function buscarFamiliares(clienteId?: string): Promise<FamiliarParams[]> {
   const accessToken = localStorage.getItem('accessToken');
-  const response = await fetch(`${url}/rest/v1/familiares`, {
+  const response = await fetch(`${url}/rest/v1/familiares${clienteId ? `?cliente_id=eq.${clienteId}` : ''}`, {
     method: 'GET',
     headers: {
       'apikey': serviceKey as string,

@@ -42,17 +42,15 @@ const EmergencySocorrista: React.FC = () => {
   const [trackingAtivo, setTrackingAtivo] = useState(false);
   const [watchId, setWatchId] = useState<number | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
-  const lastSoundPlay = useRef<number>(0);
-  const MIN_SOUND_INTERVAL = 5000; // 5 segundos entre sons
+  const lastSocorristaPos = useRef<{ lat: number; lng: number } | null>(null); // Para evitar loops
+  const lastDBUpdate = useRef<number>(0); // Controle de atualizações do banco
+  const MIN_DB_UPDATE_INTERVAL = 8000; // 8 segundos entre atualizações do banco
   const navigate = useNavigate();
 
   // Rate limiting para API OSRM - mesmo sistema do EmergencyFamily
   const lastOSRMCall = useRef<number>(0);
   const MIN_OSRM_INTERVAL = 30000; // 30 segundos entre chamadas
   const isOSRMCallInProgress = useRef<boolean>(false); // Flag para evitar chamadas simultâneas
-  const lastSocorristaPos = useRef<{ lat: number; lng: number } | null>(null); // Para evitar loops
-  const lastDBUpdate = useRef<number>(0); // Controle de atualizações do banco
-  const MIN_DB_UPDATE_INTERVAL = 8000; // 8 segundos entre atualizações do banco
 
   useEffect(() => {
     // Buscar chamado real pelo id salvo no localStorage
@@ -125,22 +123,11 @@ const EmergencySocorrista: React.FC = () => {
           event: 'UPDATE', 
           schema: 'public', 
           table: 'chamado',
-          filter: `id=eq.${chamadoId}` // Removendo o filtro de status aqui para debugar
+          filter: `id=eq.${chamadoId}`
         }, 
         (payload) => {
           console.log('[REALTIME] Mudança detectada no chamado:', payload);
-          console.log('[REALTIME] Status do chamado:', payload.new?.status); // Log adicional para debug
-          
-          // Tocar o som para qualquer atualização do chamado por enquanto
-          const now = Date.now();
-          if (now - lastSoundPlay.current >= MIN_SOUND_INTERVAL) {
-            console.log('[REALTIME] Tentando tocar som de notificação'); // Log adicional para debug
-            const audio = new Audio('/assets/notification.mp3');
-            audio.play().catch(error => {
-              console.error('[REALTIME] Erro ao tocar som:', error);
-            });
-            lastSoundPlay.current = now;
-          }
+          console.log('[REALTIME] Status do chamado:', payload.new?.status);
           
           if (payload.new && payload.new.posicao_inicial_socorrista) {
             console.log('[REALTIME] Nova posição do socorrista:', payload.new.posicao_inicial_socorrista);
