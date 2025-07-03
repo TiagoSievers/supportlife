@@ -29,6 +29,7 @@ const AddPartnerDialog: React.FC<AddPartnerDialogProps> = ({ open, onClose, init
   const [empresa, setEmpresa] = useState(initialData?.empresa || '');
   const [contato, setContato] = useState(initialData?.contato || '');
   const [email, setEmail] = useState(initialData?.email || '');
+  const [emailError, setEmailError] = useState('');
   const [telefone, setTelefone] = useState(initialData?.telefone || '');
 
   React.useEffect(() => {
@@ -38,11 +39,20 @@ const AddPartnerDialog: React.FC<AddPartnerDialogProps> = ({ open, onClose, init
     setTelefone(initialData?.telefone || '');
   }, [initialData, open]);
 
+  const validateEmail = (email: string) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  };
+
   const handleSave = async () => {
     if (!empresa || !contato || !email || !telefone) {
       alert('Por favor, preencha todos os campos.');
       return;
     }
+    if (!validateEmail(email)) {
+      setEmailError('Email inválido');
+      return;
+    }
+    setEmailError('');
     // === FLUXO 2: EDIÇÃO DE PARCEIRO ===
     if (onSave) {
       await onSave({ empresa, contato, email, telefone });
@@ -70,9 +80,14 @@ const AddPartnerDialog: React.FC<AddPartnerDialogProps> = ({ open, onClose, init
         onCreate({ empresa, contato, email, telefone });
       }
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao enviar convite ou criar socorrista:', error);
-      alert('Erro ao enviar convite ou criar socorrista, tente novamente.');
+      // Verifica se o erro é de e-mail duplicado
+      if (error?.message?.includes('duplicate') || error?.message?.includes('already registered') || error?.message?.includes('email') || error?.message?.includes('23505')) {
+        alert('Este e-mail já está em uso.');
+      } else {
+        alert('Erro ao enviar convite ou criar socorrista, tente novamente.');
+      }
     }
   };
 
@@ -106,7 +121,16 @@ const AddPartnerDialog: React.FC<AddPartnerDialogProps> = ({ open, onClose, init
           type="email"
           fullWidth
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (!validateEmail(e.target.value)) {
+              setEmailError('Email inválido');
+            } else {
+              setEmailError('');
+            }
+          }}
+          error={!!emailError}
+          helperText={emailError}
         />
         <TextField
           margin="dense"
@@ -128,7 +152,7 @@ const AddPartnerDialog: React.FC<AddPartnerDialogProps> = ({ open, onClose, init
         <Button onClick={onClose} color="primary">
           Cancelar
         </Button>
-        <Button onClick={handleSave} color="primary" variant="contained">
+        <Button onClick={handleSave} color="primary" variant="contained" disabled={!!emailError || !email}>
           Salvar
         </Button>
       </DialogActions>

@@ -95,11 +95,21 @@ const Family: React.FC = () => {
     setIsEditing(false);
   };
 
+  // Função para validar e-mail
+  const isValidEmail = (email: string) => {
+    // Regex simples para validação de e-mail
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  };
+
   const handleSave = async (member: FamilyMember) => {
     console.log('[Family] Salvando familiar:', {
       member,
       isEditing: isEditing
     });
+    if (member.email && !isValidEmail(member.email)) {
+      alert('Por favor, insira um e-mail válido.');
+      return;
+    }
     try {
       await fetchFamilyMembers();
       handleCloseDialog();

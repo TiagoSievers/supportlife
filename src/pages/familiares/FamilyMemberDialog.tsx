@@ -42,6 +42,7 @@ const emptyMember: FamilyMember = {
 const FamilyMemberDialog: React.FC<FamilyMemberDialogProps> = ({ open, onClose, initialData, onSave, isEditing }) => {
   const [formData, setFormData] = useState<FamilyMember>(initialData || emptyMember);
   const [loading, setLoading] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
   let isSending = false; // lock para evitar múltiplos envios
 
   useEffect(() => {
@@ -57,6 +58,15 @@ const FamilyMemberDialog: React.FC<FamilyMemberDialogProps> = ({ open, onClose, 
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, checked, type } = e.target;
+    if (name === 'email') {
+      // Regex igual ao ClientDialog.tsx
+      const re = /^(([^<>()\[\]\\.,;:\s@\"]+(\.[^<>()\[\]\\.,;:\s@\"]+)*)|(".+"))@(([^<>()[\]\\.,;:\s@\"]+\.)+[^<>()[\]\\.,;:\s@\"]{2,})$/i;
+      if (!re.test(String(value).toLowerCase())) {
+        setEmailError('Digite um e-mail válido');
+      } else {
+        setEmailError(null);
+      }
+    }
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value,
@@ -69,6 +79,12 @@ const FamilyMemberDialog: React.FC<FamilyMemberDialogProps> = ({ open, onClose, 
 
     if (!formData.name || !formData.relationship || !formData.phone || !formData.email) {
       alert('Por favor, preencha todos os campos obrigatórios.');
+      isSending = false;
+      return;
+    }
+
+    if (emailError) {
+      alert(emailError);
       isSending = false;
       return;
     }
@@ -162,7 +178,7 @@ const FamilyMemberDialog: React.FC<FamilyMemberDialogProps> = ({ open, onClose, 
             alert('Familiar reativado e atualizado. Um e-mail de redefinição de senha foi enviado.');
             onSave({ ...formData, id: familiarExistente.id });
           } else {
-            alert('Já existe um familiar cadastrado com este e-mail.');
+            alert('Este e-mail já está em uso.');
           }
         } else {
           // Criar novo familiar
@@ -209,7 +225,12 @@ const FamilyMemberDialog: React.FC<FamilyMemberDialogProps> = ({ open, onClose, 
       }
     } catch (error: any) {
       console.error('[FamilyMemberDialog] Erro:', error);
-      alert('Erro ao salvar familiar: ' + error.message);
+      // Verifica se o erro é de e-mail duplicado
+      if (error?.message?.includes('duplicate') || error?.message?.includes('already registered') || error?.message?.includes('email') || error?.message?.includes('23505')) {
+        alert('Este e-mail já está em uso.');
+      } else {
+        alert('Erro ao salvar familiar: ' + error.message);
+      }
     } finally {
       setLoading(false);
       isSending = false;
@@ -272,11 +293,13 @@ const FamilyMemberDialog: React.FC<FamilyMemberDialogProps> = ({ open, onClose, 
           value={formData.email}
           onChange={handleChange}
           required
+          error={!!emailError}
+          helperText={emailError}
         />
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancelar</Button>
-        <Button onClick={handleSave} variant="contained" disabled={loading}>Salvar</Button>
+        <Button onClick={handleSave} variant="contained" disabled={loading || !!emailError}>Salvar</Button>
       </DialogActions>
     </Dialog>
   );

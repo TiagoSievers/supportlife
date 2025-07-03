@@ -129,17 +129,27 @@ const AddUserAdminDialog: React.FC<AddUserAdminDialogProps> = ({ open, onClose, 
   const [nome, setNome] = useState(initialData?.nome || '');
   const [email, setEmail] = useState(initialData?.email || '');
   const [perfil, setPerfil] = useState('administrador');
+  const [emailError, setEmailError] = useState('');
 
   React.useEffect(() => {
     setNome(initialData?.nome || '');
     setEmail(initialData?.email || '');
   }, [initialData, open]);
 
+  const validateEmail = (email: string) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  };
+
   const handleSave = async () => {
     if (!email || !nome || !perfil) {
       alert('Por favor, preencha todos os campos.');
       return;
     }
+    if (!validateEmail(email)) {
+      setEmailError('Email inválido');
+      return;
+    }
+    setEmailError('');
     if (onSave) {
       await onSave({ nome, email, perfil });
       if (atualizarLista) await atualizarLista();
@@ -152,9 +162,8 @@ const AddUserAdminDialog: React.FC<AddUserAdminDialogProps> = ({ open, onClose, 
       const adminExistente = await verificarAdminExistente(email);
       
       if (adminExistente) {
-        // Se o admin existe, enviar email de recuperação de senha
-        await recoverPassword(email);
-        alert('Este email já está cadastrado. Um email de recuperação de senha foi enviado.');
+        // Se o admin existe, mostrar mensagem e não enviar e-mail de recuperação
+        alert('Este e-mail já está em uso.');
         onClose();
         return;
       }
@@ -186,12 +195,7 @@ const AddUserAdminDialog: React.FC<AddUserAdminDialogProps> = ({ open, onClose, 
       
       // Tratamento específico para email duplicado
       if (error.message?.includes('duplicate key value') || error.code === '23505') {
-        try {
-          await recoverPassword(email);
-          alert('Este email já está cadastrado. Um email de recuperação de senha foi enviado.');
-        } catch (recoveryError) {
-          alert('Este email já está cadastrado. Tente usar um email diferente ou entre em contato com o suporte.');
-        }
+        alert('Este e-mail já está em uso.');
       } else {
         alert(`Erro ao enviar convite/criar admin: ${error.message}`);
       }
@@ -225,8 +229,17 @@ const AddUserAdminDialog: React.FC<AddUserAdminDialogProps> = ({ open, onClose, 
           fullWidth
           variant="outlined"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (!validateEmail(e.target.value)) {
+              setEmailError('Email inválido');
+            } else {
+              setEmailError('');
+            }
+          }}
           required
+          error={!!emailError}
+          helperText={emailError}
         />
         <FormControl fullWidth margin="dense">
           <InputLabel id="perfil-label">Perfil</InputLabel>
@@ -246,7 +259,7 @@ const AddUserAdminDialog: React.FC<AddUserAdminDialogProps> = ({ open, onClose, 
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancelar</Button>
-        <Button onClick={handleSave} variant="contained">Salvar</Button>
+        <Button onClick={handleSave} variant="contained" disabled={!!emailError || !email}>Salvar</Button>
       </DialogActions>
     </Dialog>
   );

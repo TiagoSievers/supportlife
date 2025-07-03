@@ -1,8 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Button, Box, Typography } from '@mui/material';
 import { styled, keyframes } from '@mui/material/styles';
-import { useNavigate } from 'react-router-dom';
-import { getAddressFromCoords } from './getAddressFromCoords';
+import ChamadoModalClient from './ChamadoModalClient';
 
 // Adicionar animação de sombra suave
 const shadowGlow = keyframes`
@@ -58,171 +57,19 @@ const StyledSOSButton = styled(Button)(({ theme }) => ({
 }));
 
 const SOSButton: React.FC = () => {
-  const navigate = useNavigate();
+  const [modalOpen, setModalOpen] = useState(false);
 
-  const handleSOSClick = async () => {
-    const url = process.env.REACT_APP_SUPABASE_URL;
-    const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-    if (!url || !serviceKey) {
-      console.error('Supabase URL ou Service Key não definidos nas variáveis de ambiente.');
-      return;
-    }
-    const cliente_id = localStorage.getItem('clienteId');
-    console.log('clienteId do localStorage:', cliente_id);
-    if (!cliente_id) {
+  const handleSOSClick = () => {
+    const clienteId = localStorage.getItem('clienteId');
+    if (!clienteId) {
       console.error('ID do cliente não encontrado no localStorage. Usuário não está logado como cliente?');
       return;
     }
+    setModalOpen(true);
+  };
 
-    // Obter localização do usuário
-    let localizacao = '';
-    let endereco_textual: string | null = '';
-    let latitude = null;
-    let longitude = null;
-    try {
-      const getPosition = () => new Promise<GeolocationPosition>((resolve, reject) => {
-        const options = {
-          enableHighAccuracy: true,  // Solicita a melhor precisão possível
-          timeout: 10000,           // Tempo limite de 10 segundos
-          maximumAge: 0             // Não usar posições em cache
-        };
-        navigator.geolocation.getCurrentPosition(resolve, reject, options);
-      });
-      const position = await getPosition();
-      latitude = position.coords.latitude;
-      longitude = position.coords.longitude;
-      localizacao = `${latitude},${longitude}`;
-      console.log('Coordenadas obtidas:', latitude, longitude);
-    } catch (geoError) {
-      console.warn('Não foi possível obter a localização do usuário:', geoError);
-      // Mensagens de erro amigáveis
-      if (geoError && typeof geoError === 'object' && 'code' in geoError) {
-        switch (geoError.code) {
-          case 1: // PERMISSION_DENIED
-            alert('Por favor, permita o acesso à sua localização para continuar.');
-            break;
-          case 2: // POSITION_UNAVAILABLE
-            alert('Informações de localização indisponíveis. Por favor, verifique suas configurações de localização.');
-            break;
-          case 3: // TIMEOUT
-            alert('Tempo esgotado ao obter localização. Por favor, tente novamente.');
-            break;
-          default:
-            alert('Não foi possível obter sua localização.');
-        }
-      } else {
-        alert('Não foi possível obter sua localização.');
-      }
-      localizacao = '';
-      endereco_textual = '';
-      return; // Sai da função se não conseguir obter a localização
-    }
-
-    // Tentar buscar o endereço até conseguir ou atingir o limite de tentativas
-    async function tentarBuscarEndereco(lat: number, lon: number, tentativas = 5, delayMs = 1500) {
-      for (let i = 0; i < tentativas; i++) {
-        try {
-          const endereco = await getAddressFromCoords(lat, lon);
-          if (endereco && endereco.trim() !== '') return endereco;
-          console.log(`Tentativa ${i + 1}: Endereço vazio, tentando novamente...`);
-        } catch (e) {
-          console.warn(`Tentativa ${i + 1} falhou:`, e);
-        }
-        if (i < tentativas - 1) { // Não espera na última tentativa
-        await new Promise(res => setTimeout(res, delayMs));
-        }
-      }
-      return null; // Retorna null em vez de string vazia para indicar falha
-    }
-
-    if (latitude && longitude) {
-      endereco_textual = await tentarBuscarEndereco(latitude, longitude);
-      if (!endereco_textual) {
-        alert('Não foi possível obter o endereço completo. Por favor, tente novamente ou entre em contato com o suporte.');
-        return;
-      }
-    } else {
-      alert('É necessário permitir o acesso à localização para continuar.');
-      return;
-    }
-    console.log('Endereço textual obtido:', endereco_textual);
-
-    const chamadoData = {
-      cliente_id: Number(cliente_id),
-      localizacao,
-      endereco_textual,
-      status: 'Pendente'
-    };
-
-    // Validação final antes de enviar
-    if (!endereco_textual || endereco_textual.trim() === '') {
-      console.error('Tentando enviar chamado sem endereço textual');
-      alert('Erro ao obter o endereço. Por favor, tente novamente.');
-      return;
-    }
-
-    console.log('Enviando chamado (curl style):', chamadoData);
-
-    const headers: HeadersInit = {
-      'apikey': serviceKey,
-      'Authorization': `Bearer ${serviceKey}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'return=minimal'
-    };
-
-    try {
-      const response = await fetch(`${url}/rest/v1/chamado`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(chamadoData)
-      });
-      if (!response.ok) {
-        throw new Error('Erro ao criar chamado');
-      }
-      // Obter o id do chamado criado
-      const locationHeader = response.headers.get('Location');
-      let chamadoId = null;
-      if (locationHeader) {
-        // Exemplo: /rest/v1/chamado?id=eq.42
-        const match = locationHeader.match(/id=eq\\.(\\d+)/);
-        if (match) {
-          chamadoId = Number(match[1]);
-        }
-      }
-      // Se não conseguir pelo header, buscar o último chamado do cliente
-      if (!chamadoId) {
-        const res = await fetch(`${url}/rest/v1/chamado?select=id&cliente_id=eq.${cliente_id}&order=id.desc&limit=1`, { headers });
-        const data = await res.json();
-        chamadoId = data && data[0] && data[0].id ? data[0].id : null;
-      }
-
-      // Armazenar o ID do chamado no localStorage
-      if (chamadoId) {
-        localStorage.setItem('chamadoId', chamadoId.toString());
-        console.log('ID do chamado armazenado no localStorage:', chamadoId);
-      }
-
-      // Criar log_chamado
-      if (chamadoId) {
-        const logData = {
-          chamado_id: chamadoId,
-          cliente_id: Number(cliente_id),
-          localizacao,
-          endereco_textual,
-          status: 'Pendente',
-          data_abertura: new Date().toISOString()
-        };
-        await fetch(`${url}/rest/v1/log_chamado`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(logData)
-        });
-      }
-      console.log('Chamado criado com sucesso!');
-      navigate('/emergency');
-    } catch (error) {
-      console.error('Erro ao criar chamado:', error);
-    }
+  const handleCloseModal = () => {
+    setModalOpen(false);
   };
 
   return (
@@ -249,6 +96,10 @@ const SOSButton: React.FC = () => {
       >
         Clique em caso de emergência para solicitar atendimento imediato
       </Typography>
+      <ChamadoModalClient
+        open={modalOpen}
+        onClose={handleCloseModal}
+      />
     </Box>
   );
 };

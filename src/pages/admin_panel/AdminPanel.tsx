@@ -40,13 +40,22 @@ import ClientList from './ClientList';
 import PartnerList from './PartnerList';
 import AdminUserList from './AdminUserList';
 import ChamadoList from '../chamado/ChamadoList';
-import ClientDialog, { Cliente } from './ClientDialog';
+import ClientDialog, { Cliente as ClienteDialog } from './ClientDialog';
 import MenuIcon from '@mui/icons-material/Menu';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
 import logoImage from '../../assets/cropped_image.png';
 
 const drawerWidth = 240;
+
+type Cliente = {
+  id: number;
+  nome: string;
+  email: string;
+  telefone: string;
+  status: string;
+  endereco?: any;
+};
 
 const AdminPanel: React.FC = () => {
   const [selectedSection, setSelectedSection] = useState('Chamados');

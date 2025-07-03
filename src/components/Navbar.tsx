@@ -17,13 +17,10 @@ import {
   Button
 } from '@mui/material';
 import { AccountCircle, Notifications as NotificationsIcon, Menu as MenuIcon, People as FamilyIcon, Dashboard as AdminIcon, Person as ProfileIcon, Home as HomeIcon } from '@mui/icons-material';
-import ClientDialog, { Cliente } from '../pages/admin_panel/ClientDialog';
 import ChamadoDialog, { Chamado } from '../cliente/ChamadoDialog';
 
 const Navbar: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [clientDialogOpen, setClientDialogOpen] = useState(false);
-  const [clientData, setClientData] = useState<Cliente | undefined>(undefined);
   const [chamadoDialogOpen, setChamadoDialogOpen] = useState(false);
   const [chamadoData, setChamadoData] = useState<Chamado | undefined>(undefined);
   const [hasNewChamado, setHasNewChamado] = useState(false);
@@ -32,7 +29,7 @@ const Navbar: React.FC = () => {
   const location = useLocation();
   const isHome = location && location.pathname === '/';
   const navigate = useNavigate();
-  const clienteId = localStorage.getItem('clienteId');
+  const isCliente = localStorage.getItem('userType') === 'cliente';
 
   useEffect(() => {
     const handleNovaNotificacao = () => {
@@ -63,30 +60,6 @@ const Navbar: React.FC = () => {
   const handleNavigate = (path: string, state?: any) => {
     navigate(path, state ? { state } : undefined);
     setDrawerOpen(false);
-  };
-
-  const handleOpenClientDialog = () => {
-    const stored = localStorage.getItem('clienteData');
-    if (stored) {
-      setClientData(JSON.parse(stored));
-    } else {
-      setClientData({
-        id: 1,
-        nome: 'Nome do Cliente',
-        email: 'cliente@email.com',
-        telefone: '(99) 99999-9999',
-        status: 'ativo',
-      });
-    }
-    setClientDialogOpen(true);
-  };
-
-  const handleCloseClientDialog = () => setClientDialogOpen(false);
-
-  const handleSaveClient = (data: Cliente) => {
-    setClientData(data);
-    localStorage.setItem('clienteData', JSON.stringify(data));
-    setClientDialogOpen(false);
   };
 
   const handleOpenChamadoDialog = () => {
@@ -173,18 +146,12 @@ const Navbar: React.FC = () => {
       </AppBar>
       <Drawer anchor="left" open={drawerOpen} onClose={handleDrawerClose}>
         <Box sx={{ width: 250, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }} role="presentation" onClick={handleDrawerClose}>
-          {clienteId ? (
+          {isCliente && (
             <List>
               <ListItem disablePadding>
                 <ListItemButton onClick={() => handleNavigate('/home') }>
                   <ListItemIcon><HomeIcon /></ListItemIcon>
                   <ListItemText primary="Home" />
-                </ListItemButton>
-              </ListItem>
-              <ListItem disablePadding>
-                <ListItemButton onClick={handleOpenClientDialog}>
-                  <ListItemIcon><ProfileIcon /></ListItemIcon>
-                  <ListItemText primary="Meu Perfil" />
                 </ListItemButton>
               </ListItem>
               <ListItem disablePadding>
@@ -200,7 +167,7 @@ const Navbar: React.FC = () => {
                 </ListItemButton>
               </ListItem>
             </List>
-          ) : null}
+          )}
           <Box sx={{ p: 2, borderTop: '1px solid #e0e0e0' }}>
             <ListItem disablePadding>
               <ListItemButton onClick={() => {
@@ -214,13 +181,6 @@ const Navbar: React.FC = () => {
           </Box>
         </Box>
       </Drawer>
-      <ClientDialog
-        open={clientDialogOpen}
-        onClose={handleCloseClientDialog}
-        initialData={clientData}
-        onSave={handleSaveClient}
-        isEditing={true}
-      />
       <ChamadoDialog
         open={chamadoDialogOpen}
         onClose={handleCloseChamadoDialog}
