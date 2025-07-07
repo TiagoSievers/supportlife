@@ -131,6 +131,11 @@ const Home: React.FC = () => {
 
   // Inicia/para o intervalo de busca automática
   useEffect(() => {
+    // Log da data/hora local ao montar o componente
+    const now = new Date();
+    const saoPauloTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+    console.log('[Home] Data/hora local (America/Sao_Paulo):', saoPauloTime.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }));
+    
     if (buscaAutomatica) {
       console.log('🔄 Iniciando busca automática de localização');
       void obterLocalizacao(); // Primeira busca imediata

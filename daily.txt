@@ -1,0 +1,25 @@
+- Rebuild do APK Android realizado com sucesso, garantindo que a versão mais recente do app está disponível para testes e produção.
+- Campo de endereço (endereco) adicionado e integrado na tabela de clientes, utilizando formato JSONB no Supabase.
+- Implementado fluxo completo de CRUD do endereço no lado do operador, incluindo:
+  - Inclusão do campo CEP com busca automática de dados via ViaCEP.
+  - Campos para logradouro, bairro, cidade, estado, número, complemento e ponto de referência.
+  - Validação e envio do endereço como objeto único para o backend.
+- Adicionada validação de e-mail nos formulários de cadastro de parceiros e usuários administrativos, impedindo o envio de e-mails inválidos.
+- Mensagem de erro para e-mails já existentes alterada para: "Este e-mail já está em uso." em todos os formulários de cadastro (clientes, parceiros e usuários administrativos).
+- Implementada validação de e-mail no formulário de cadastro de familiares:
+  - Adicionada validação em tempo real do formato do e-mail.
+  - Botão de salvar desabilitado quando o e-mail é inválido.
+  - Mensagem de erro padronizada: "Este e-mail já está em uso." quando o e-mail já existe.
+- Implementada geolocalização automática do endereço cadastrado do cliente:
+  - Integração com API do Nominatim (OpenStreetMap) para converter endereços em coordenadas geográficas.
+  - Função buscarGeolocalizacaoEndereco() criada para montar endereço completo e obter lat/lng.
+  - Modificado ChamadoModalClient.tsx para salvar automaticamente a localização na coluna 'localizacao' da tabela 'chamado'.
+  - Quando cliente seleciona "endereço cadastrado", o sistema busca as coordenadas antes de criar o chamado.
+- Corrigidos erros de build no Vercel:
+  - Adicionadas dependências @capacitor/preferences e @capacitor/core ao package.json.
+  - Deploy realizado com sucesso no ambiente de produção.
+- Atualização completa do APK Android:
+  - Sincronização dos novos arquivos web com Capacitor (npx cap sync android).
+  - Rebuild do APK de debug realizado com sucesso (7.97 MB).
+  - APK gerado em android/app/build/outputs/apk/debug/app-debug.apk.
+  - Plugins Capacitor atualizados: @capacitor/app@7.0.1, @capacitor/geolocation@7.1.2, @capacitor/preferences@7.0.1.

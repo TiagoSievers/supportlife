@@ -3,6 +3,7 @@ import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography, 
 import MapPatner from './MapPatnerClient';
 import { useNavigate } from 'react-router-dom';
 import { getAddressFromCoords } from './getAddressFromCoords';
+import { formatInTimeZone } from 'date-fns-tz';
 
 const endereco = "Rua XV de Novembro, 15, Centro, Curitiba, PR, 80020-310, Brasil";
 const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(endereco)}`;
@@ -234,11 +235,16 @@ const ChamadoModalClient: React.FC<ChamadoModalProps> = ({ open, onClose }) => {
           'Prefer': 'return=minimal'
     };
 
+    // Adiciona data_abertura no momento do envio
+    const now = new Date();
+    const dataAbertura = formatInTimeZone(now, 'America/Sao_Paulo', "yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
+    const chamadoCompleto = { ...chamado, data_abertura: dataAbertura };
+
     try {
       const response = await fetch(`${url}/rest/v1/chamado`, {
         method: 'POST',
         headers,
-        body: JSON.stringify(chamado)
+        body: JSON.stringify(chamadoCompleto)
       });
 
       if (!response.ok) {
