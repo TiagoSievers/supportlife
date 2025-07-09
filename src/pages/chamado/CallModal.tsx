@@ -44,34 +44,60 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
       setTelefoneCliente(undefined);
       setLoadingFamiliares(true);
 
+      // LOG DETALHADO DA CHAMADA DE FAMILIARES
+      console.log('[CallModal] useEffect aberto!');
+      console.log('[CallModal] chamadoId:', chamadoId);
+      console.log('[CallModal] Variáveis de ambiente:', {
+        REACT_APP_SUPABASE_URL: process.env.REACT_APP_SUPABASE_URL,
+        REACT_APP_SUPABASE_SERVICE_KEY: process.env.REACT_APP_SUPABASE_SERVICE_KEY
+      });
+      console.log('[CallModal] accessToken:', localStorage.getItem('accessToken'));
+
       // Primeiro buscar o cliente_id do chamado
       const fetchFamiliares = async () => {
         try {
-          if (!chamadoId) return;
+          if (!chamadoId) {
+            console.log('[CallModal] chamadoId não fornecido');
+            return;
+          }
           const url = process.env.REACT_APP_SUPABASE_URL;
           const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
           const accessToken = localStorage.getItem('accessToken');
-          
           if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
           if (!accessToken) throw new Error('accessToken não encontrado no localStorage');
-          
-          // Buscar o chamado atual para pegar o cliente_id
-          const chamadoResp = await fetch(`${url}/rest/v1/chamado?id=eq.${chamadoId}`, {
+
+          // Buscar o chamado para pegar o cliente_id
+          const chamadoUrl = `${url}/rest/v1/chamado?id=eq.${chamadoId}`;
+          console.log('[CallModal] Buscando chamado:', chamadoUrl);
+          const chamadoResp = await fetch(chamadoUrl, {
             headers: {
               'apikey': serviceKey,
               'Authorization': `Bearer ${accessToken}`,
               'Content-Type': 'application/json',
             }
           });
-          
           const chamadoData = await chamadoResp.json();
-          if (!chamadoData[0] || !chamadoData[0].cliente_id) return;
-          
+          console.log('[CallModal] Dados do chamado:', chamadoData);
+          if (!chamadoData[0] || !chamadoData[0].cliente_id) {
+            console.log('[CallModal] Chamado não encontrado ou sem cliente_id');
+            return;
+          }
           const clienteId = chamadoData[0].cliente_id;
-          
-          // Agora buscar os familiares com o cliente_id
-          const familiares = await buscarFamiliares(clienteId);
-          
+          console.log('[CallModal] clienteId do chamado:', clienteId);
+
+          // Buscar familiares do cliente
+          const familiaresUrl = `${url}/rest/v1/familiares?cliente_id=eq.${clienteId}`;
+          console.log('[CallModal] Buscando familiares:', familiaresUrl);
+          const familiaresResp = await fetch(familiaresUrl, {
+            headers: {
+              'apikey': serviceKey,
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            }
+          });
+          const familiares = await familiaresResp.json();
+          console.log('[CallModal] Familiares encontrados:', familiares);
+
           // Filtrar apenas os não deletados
           const members = familiares
             .filter((f: any) => !f.deletado)
@@ -83,10 +109,11 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
               email: f.email,
               isEmergencyContact: f.contato_emergencia || false,
             }));
-          
+
+          console.log('[CallModal] Members processados:', members);
           setFamilyMembers(members);
         } catch (error) {
-          console.error('Erro ao buscar familiares:', error);
+          console.error('[CallModal] Erro ao buscar familiares:', error);
           setFamilyMembers([]);
         } finally {
           setLoadingFamiliares(false);
@@ -127,11 +154,12 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
             nome = clienteData[0].nome || '';
           }
           setTelefoneCliente(clienteData[0]?.telefone);
-          // Buscar todos os chamados do cliente (teste com curl fixo)
-          const response = await fetch('https://usqozshucjsgmfgaoiad.supabase.co/rest/v1/chamado?select=*&cliente_id=eq.12&order=data_abertura.desc', {
+          // Buscar todos os chamados do cliente (corrigido para usar variáveis de ambiente)
+          const chamadosUrl = `${url}/rest/v1/chamado?select=*&cliente_id=eq.${clienteId}&order=data_abertura.desc`;
+          const response = await fetch(chamadosUrl, {
             headers: {
-              'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzcW96c2h1Y2pzZ21mZ2FvaWFkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY3OTI4OTUsImV4cCI6MjA2MjM2ODg5NX0.DMNalkURt6sp2g21URpXfcY4ts53cLxbMR_spk-TgvQ',
-              'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsImtpZCI6IlNPZzBsRGZCMm95VHhnWjIiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL3VzcW96c2h1Y2pzZ21mZ2FvaWFkLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJjNDkxYzBjNC1lNGI2LTQxMGMtODVkNC1jMjUwMTc0ZjA0MGIiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzQ5Njc4MDE5LCJpYXQiOjE3NDkwNzMyMTksImVtYWlsIjoib3Jvc2lvMTExNEB1b3Jhay5jb20iLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsX3ZlcmlmaWVkIjp0cnVlfSwicm9sZSI6ImF1dGhlbnRpY2F0ZWQiLCJhYWwiOiJhYWwxIiwiYW1yIjpbeyJtZXRob2QiOiJwYXNzd29yZCIsInRpbWVzdGFtcCI6MTc0OTA3MzIxOX1dLCJzZXNzaW9uX2lkIjoiYzJlYjFjNjctMTgyZi00MDgxLTgzZGYtODIxNjJlMzVhNDg3IiwiaXNfYW5vbnltb3VzIjpmYWxzZX0.UooyxmTZztdzRDsg4QrCR5DzrusFtX543RpZxP4Heok',
+              'apikey': serviceKey,
+              'Authorization': `Bearer ${accessToken}`,
               'Content-Type': 'application/json'
             }
           });
