@@ -112,31 +112,66 @@ const ChamadoModalClient: React.FC<ChamadoModalProps> = ({ open, onClose }) => {
   useEffect(() => {
     const buscarEnderecoCliente = async () => {
       if (!open) return;
-      // Aqui você buscaria o cliente real do backend. Exemplo mock:
-      const clienteMock: Cliente = {
-        id: Number(localStorage.getItem('clienteId')),
-        endereco: {
-          cep: '80530-022',
-          bairro: 'São Francisco',
-          cidade: 'Curitiba',
-          estado: 'PR',
-          numero: '111',
-          logradouro: 'Rua Senador Xavier da Silva',
-          complemento: '',
-          ponto_referencia: ''
-        }
+      
+      const clienteId = Number(localStorage.getItem('clienteId'));
+      if (!clienteId) {
+        console.error('ID do cliente não encontrado');
+        return;
+      }
+
+      const url = process.env.REACT_APP_SUPABASE_URL;
+      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+      
+      if (!url || !serviceKey) {
+        console.error('Supabase URL ou Service Key não definidos nas variáveis de ambiente.');
+        return;
+      }
+
+      const headers: HeadersInit = {
+        'apikey': serviceKey,
+        'Authorization': `Bearer ${serviceKey}`,
+        'Content-Type': 'application/json'
       };
-      setCliente(clienteMock);
-      setEnderecoRegistrado(formatarEndereco(clienteMock.endereco));
-      if (localizacaoEscolhida === 'cadastrada') {
-        // Buscar geolocalização do endereço cadastrado
-        const geo = await buscarGeolocalizacaoEndereco(clienteMock.endereco);
-        setChamado({
-          cliente_id: clienteMock.id,
-          localizacao: geo ? `${geo.latitude},${geo.longitude}` : '',
-          endereco_textual: geo ? geo.enderecoFormatado : formatarEndereco(clienteMock.endereco),
-          status: 'Pendente'
-        });
+
+      try {
+        // Buscar dados do cliente no banco de dados
+        const response = await fetch(
+          `${url}/rest/v1/cliente?select=id,endereco&id=eq.${clienteId}`,
+          { headers }
+        );
+
+        if (!response.ok) {
+          throw new Error('Erro ao buscar dados do cliente');
+        }
+
+        const data = await response.json();
+        
+        if (data && data[0]) {
+          const clienteReal: Cliente = {
+            id: data[0].id,
+            endereco: data[0].endereco
+          };
+          
+          setCliente(clienteReal);
+          setEnderecoRegistrado(formatarEndereco(clienteReal.endereco));
+          
+          if (localizacaoEscolhida === 'cadastrada') {
+            // Buscar geolocalização do endereço cadastrado
+            const geo = await buscarGeolocalizacaoEndereco(clienteReal.endereco);
+            setChamado({
+              cliente_id: clienteReal.id,
+              localizacao: geo ? `${geo.latitude},${geo.longitude}` : '',
+              endereco_textual: geo ? geo.enderecoFormatado : formatarEndereco(clienteReal.endereco),
+              status: 'Pendente'
+            });
+          }
+        } else {
+          console.error('Cliente não encontrado');
+          alert('Dados do cliente não encontrados. Por favor, faça login novamente.');
+        }
+      } catch (error) {
+        console.error('Erro ao buscar dados do cliente:', error);
+        alert('Erro ao carregar dados do cliente. Por favor, tente novamente.');
       }
     };
     if (open) {
