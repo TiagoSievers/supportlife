@@ -18,6 +18,8 @@ import {
 } from '@mui/material';
 import { AccountCircle, Notifications as NotificationsIcon, Menu as MenuIcon, People as FamilyIcon, Dashboard as AdminIcon, Person as ProfileIcon, Home as HomeIcon } from '@mui/icons-material';
 import ChamadoDialog, { Chamado } from '../cliente/ChamadoDialog';
+import { Capacitor } from '@capacitor/core';
+import { Preferences } from '@capacitor/preferences';
 
 const Navbar: React.FC = () => {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -75,6 +77,18 @@ const Navbar: React.FC = () => {
   };
 
   const handleCloseChamadoDialog = () => setChamadoDialogOpen(false);
+
+  // Função para limpar todos os storages (web e mobile)
+  const clearAllStorage = async () => {
+    localStorage.clear();
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Preferences.clear();
+      } catch (error) {
+        console.error('Erro ao limpar Preferences:', error);
+      }
+    }
+  };
 
   return (
     <>
@@ -170,8 +184,8 @@ const Navbar: React.FC = () => {
           )}
           <Box sx={{ p: 2, borderTop: '1px solid #e0e0e0' }}>
             <ListItem disablePadding>
-              <ListItemButton onClick={() => {
-                localStorage.clear();
+              <ListItemButton onClick={async () => {
+                await clearAllStorage();
                 navigate('/');
               }}>
                 <ListItemIcon><AccountCircle /></ListItemIcon>
