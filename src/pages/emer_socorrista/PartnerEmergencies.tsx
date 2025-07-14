@@ -29,39 +29,26 @@ const PartnerEmergencies: React.FC = () => {
   };
 
   useEffect(() => {
-    // Lógica de redirecionamento automático para chamado em aberto
     const verificarChamadoAberto = async () => {
       try {
-        console.log(`[PartnerEmergencies] Plataforma: ${Capacitor.isNativePlatform() ? 'Mobile Nativo' : 'Web'}`);
-        
-        // Obter dados do storage correto
         const url = process.env.REACT_APP_SUPABASE_URL;
         const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
         const accessToken = await getStorageValue('accessToken') || await getStorageValue('userToken');
         const socorristaId = await getStorageValue('socorristaId');
         
-        console.log('[PartnerEmergencies] Dados obtidos:', {
-          url: !!url,
-          serviceKey: !!serviceKey,
-          socorristaId: !!socorristaId,
-          accessToken: !!accessToken
-        });
-        
         if (!url || !serviceKey || !socorristaId || !accessToken) {
-          console.log('[PartnerEmergencies] Parâmetros insuficientes para buscar chamados');
           return;
         }
 
-        // Filtros: status em aberto e do dia
+        // Construir data de hoje (mesmo formato do Home.tsx)
         const today = new Date();
         const yyyy = today.getFullYear();
         const mm = String(today.getMonth() + 1).padStart(2, '0');
         const dd = String(today.getDate()).padStart(2, '0');
         const todayStr = `${yyyy}-${mm}-${dd}`;
         
+        // APENAS buscar chamados "A caminho" de hoje
         const endpoint = `${url}/rest/v1/chamado?socorrista_id=eq.${socorristaId}&status=eq.A caminho&data_abertura=gte.${todayStr}T00:00:00&data_abertura=lte.${todayStr}T23:59:59&order=data_abertura.desc&limit=1`;
-        
-        console.log('[PartnerEmergencies] Fazendo GET chamado:', endpoint);
         
         const response = await fetch(endpoint, {
           headers: {
@@ -72,27 +59,19 @@ const PartnerEmergencies: React.FC = () => {
         });
 
         if (!response.ok) {
-          const errorText = await response.text();
-          console.error('[PartnerEmergencies] Erro na resposta da API:', response.status, errorText);
           return;
         }
 
         const data = await response.json();
-        console.log('[PartnerEmergencies] Resposta GET chamado:', data);
         
         if (Array.isArray(data) && data.length > 0) {
           const chamado = data[0];
-          console.log('[PartnerEmergencies] Chamado em aberto encontrado:', chamado);
-          
-          // Salva o chamadoId no storage correto
           await setStorageValue('chamadoId', chamado.id.toString());
           navigate('/emergencia-socorrista');
-        } else {
-          console.log('[PartnerEmergencies] Nenhum chamado em aberto encontrado.');
         }
         
       } catch (err) {
-        console.error('[PartnerEmergencies] Erro ao buscar chamado em aberto:', err);
+        // Silencioso
       }
     };
 
@@ -102,36 +81,17 @@ const PartnerEmergencies: React.FC = () => {
   useEffect(() => {
     const fetchAceitos = async () => {
       try {
-        console.log('[PartnerEmergencies] Iniciando busca de chamados aceitos...');
-        
-        // Obter dados do storage correto
         const url = process.env.REACT_APP_SUPABASE_URL;
         const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
         const accessToken = await getStorageValue('accessToken') || await getStorageValue('userToken');
         const socorristaId = await getStorageValue('socorristaId');
-
-        console.log('=== DEBUG API CHAMADOS ===');
-        console.log('Plataforma:', Capacitor.isNativePlatform() ? 'Mobile Nativo' : 'Web');
-        console.log('URL:', !!url);
-        console.log('socorristaId:', !!socorristaId);
-        console.log('accessToken:', !!accessToken);
         
-        if (!url || !serviceKey || !socorristaId) {
-          console.log('[PartnerEmergencies] Faltando parâmetros:', { 
-            url: !!url, 
-            serviceKey: !!serviceKey, 
-            socorristaId: !!socorristaId 
-          });
-          return;
-        }
-        
-        if (!accessToken) {
-          console.log('[PartnerEmergencies] AccessToken não encontrado');
+        if (!url || !serviceKey || !socorristaId || !accessToken) {
           return;
         }
 
+        // APENAS contar todos os chamados (sem redirecionamento)
         const apiUrl = `${url}/rest/v1/chamado?socorrista_id=eq.${socorristaId}`;
-        console.log('[PartnerEmergencies] API URL completa:', apiUrl);
         
         const response = await fetch(apiUrl, {
           method: 'GET',
@@ -141,40 +101,24 @@ const PartnerEmergencies: React.FC = () => {
             'Content-Type': 'application/json'
           }
         });
-
-        console.log('[PartnerEmergencies] Status da resposta:', response.status);
         
         if (!response.ok) {
-          const errorText = await response.text();
-          console.error('[PartnerEmergencies] Erro na resposta:', response.status, errorText);
           return;
         }
 
         const data = await response.json();
-        console.log('[PartnerEmergencies] Dados recebidos:', data);
         
         if (Array.isArray(data)) {
-          console.log('[PartnerEmergencies] Total de chamados encontrados:', data.length);
           setAceitos(data.length);
-          
-          // Nova lógica: se houver chamado "A caminho", redireciona
-          const chamadoEmAberto = data.find((c: any) => c.status === 'A caminho');
-          if (chamadoEmAberto) {
-            console.log('[PartnerEmergencies] Chamado em aberto encontrado (fetchAceitos):', chamadoEmAberto);
-            await setStorageValue('chamadoId', chamadoEmAberto.id.toString());
-            navigate('/emergencia-socorrista');
-          }
-        } else {
-          console.log('[PartnerEmergencies] Resposta não é um array:', typeof data);
         }
         
       } catch (error) {
-        console.error('[PartnerEmergencies] Erro na API:', error);
+        // Silencioso
       }
     };
 
     fetchAceitos();
-  }, [navigate]);
+  }, []); // SEM navigate para evitar loops
 
   return (
     <>
@@ -227,15 +171,6 @@ const PartnerEmergencies: React.FC = () => {
           </Paper>
           
           <ChamadoSocorristaList />
-          
-          {/* Debug info - só aparece em desenvolvimento */}
-          {process.env.NODE_ENV === 'development' && (
-            <Box sx={{ mt: 2, p: 1, backgroundColor: '#f5f5f5', borderRadius: 1 }}>
-              <Typography variant="caption" color="text.secondary">
-                Debug: Plataforma - {Capacitor.isNativePlatform() ? 'Mobile Nativo' : 'Web'}
-              </Typography>
-            </Box>
-          )}
         </Box>
       </Container>
     </>
