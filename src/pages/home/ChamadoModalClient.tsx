@@ -93,6 +93,7 @@ const ChamadoModalClient: React.FC<ChamadoModalProps> = ({ open, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [enderecoRegistrado, setEnderecoRegistrado] = useState<string | null>(null);
   const [cliente, setCliente] = useState<Cliente | null>(null);
+  const [mapLoading, setMapLoading] = useState(false);
 
   useEffect(() => {
     fetch(url)
@@ -179,10 +180,18 @@ const ChamadoModalClient: React.FC<ChamadoModalProps> = ({ open, onClose }) => {
     }
   }, [open, localizacaoEscolhida]);
 
+  useEffect(() => {
+    if (open) {
+      setLocalizacaoEscolhida('atual'); // Sempre seleciona localização atual ao abrir
+      setMostrarMapa(true); // Garante que o mapa será exibido
+    }
+  }, [open]);
+
   // Efeito para inicializar a localização atual
   useEffect(() => {
     if (open && localizacaoEscolhida === 'atual') {
-      obterLocalizacaoAtual();
+      setMapLoading(true);
+      obterLocalizacaoAtual().finally(() => setMapLoading(false));
     }
   }, [open, localizacaoEscolhida]);
 
@@ -401,8 +410,11 @@ const ChamadoModalClient: React.FC<ChamadoModalProps> = ({ open, onClose }) => {
             </RadioGroup>
           </FormControl>
 
-          {chamado?.localizacao && localizacaoEscolhida === 'atual' && (
-            <Box sx={{ mt: 2 }}>
+          {localizacaoEscolhida === 'atual' && (
+            <Box sx={{ mt: 2, minHeight: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {mapLoading || !chamado?.localizacao ? (
+                <CircularProgress size={40} color="primary" />
+              ) : (
                 <MapPatner
                   center={{
                     lat: Number(chamado.localizacao.split(',')[0]),
@@ -418,7 +430,8 @@ const ChamadoModalClient: React.FC<ChamadoModalProps> = ({ open, onClose }) => {
                       title: 'Local do chamado'
                     }
                   ]}
-              />
+                />
+              )}
             </Box>
           )}
           {((localizacaoEscolhida === 'atual' && chamado?.endereco_textual) || 

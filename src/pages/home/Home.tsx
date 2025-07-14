@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Box, Typography, Button, Container } from '@mui/material';
+import { Box, Typography, Button, Container, Paper, Divider } from '@mui/material';
 import {
   Person as ProfileIcon,
   People as FamilyIcon,
@@ -48,6 +48,25 @@ const Home: React.FC = () => {
   const [obtendoLocalizacao, setObtendoLocalizacao] = useState<boolean>(false);
   const [buscaAutomatica, setBuscaAutomatica] = useState<boolean>(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Estados para debug no frontend
+  const [debugInfo, setDebugInfo] = useState<{
+    clienteId: string | null;
+    apiUrl: string;
+    apiResponse: any;
+    apiError: string | null;
+    supabaseUrl: string | null;
+    serviceKey: string | null;
+    lastCheck: string;
+  }>({
+    clienteId: null,
+    apiUrl: '',
+    apiResponse: null,
+    apiError: null,
+    supabaseUrl: null,
+    serviceKey: null,
+    lastCheck: ''
+  });
 
   const navigate = useNavigate();
 
@@ -173,6 +192,8 @@ const Home: React.FC = () => {
 
   useEffect(() => {
     const verificarChamadoAberto = async () => {
+      const timestamp = new Date().toLocaleString('pt-BR');
+      
       try {
         console.log(`[Home] Plataforma: ${Capacitor.isNativePlatform() ? 'Mobile Nativo' : 'Web'}`);
         
@@ -180,17 +201,37 @@ const Home: React.FC = () => {
         const clienteId = await getStorageValue('clienteId');
         console.log('[Home] ClienteId obtido:', clienteId);
         
-        if (!clienteId) {
-          console.log('[Home] Nenhum clienteId encontrado');
-          return;
-        }
-
         // Obter variáveis de ambiente
         const url = process.env.REACT_APP_SUPABASE_URL;
         const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
         
+        // Atualizar debug info
+        setDebugInfo(prev => ({
+          ...prev,
+          clienteId,
+          supabaseUrl: url || null,
+          serviceKey: serviceKey ? 'Configurado' : null,
+          lastCheck: timestamp,
+          apiError: null
+        }));
+        
+        if (!clienteId) {
+          console.log('[Home] Nenhum clienteId encontrado');
+          setDebugInfo(prev => ({
+            ...prev,
+            apiError: 'ClienteId não encontrado no storage',
+            apiResponse: null
+          }));
+          return;
+        }
+        
         if (!url || !serviceKey) {
           console.error('[Home] Variáveis de ambiente não configuradas:', { url: !!url, serviceKey: !!serviceKey });
+          setDebugInfo(prev => ({
+            ...prev,
+            apiError: 'Variáveis de ambiente não configuradas',
+            apiResponse: null
+          }));
           return;
         }
 
@@ -205,6 +246,12 @@ const Home: React.FC = () => {
         
         console.log('[Home] Fazendo GET chamado:', endpoint);
         
+        // Atualizar URL da API no debug
+        setDebugInfo(prev => ({
+          ...prev,
+          apiUrl: endpoint
+        }));
+        
         const response = await fetch(endpoint, {
           headers: {
             'apikey': serviceKey,
@@ -216,11 +263,23 @@ const Home: React.FC = () => {
         if (!response.ok) {
           const errorText = await response.text();
           console.error('[Home] Erro na resposta da API:', response.status, errorText);
+          setDebugInfo(prev => ({
+            ...prev,
+            apiError: `HTTP ${response.status}: ${errorText}`,
+            apiResponse: null
+          }));
           return;
         }
 
         const data = await response.json();
         console.log('[Home] Resposta GET chamado:', data);
+        
+        // Atualizar resposta da API no debug
+        setDebugInfo(prev => ({
+          ...prev,
+          apiResponse: data,
+          apiError: null
+        }));
         
         if (data && data.length > 0) {
           const chamado = data[0];
@@ -253,6 +312,11 @@ const Home: React.FC = () => {
         
       } catch (error) {
         console.error('[Home] Erro ao buscar chamado:', error);
+        setDebugInfo(prev => ({
+          ...prev,
+          apiError: `Erro de rede: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+          apiResponse: null
+        }));
         
         if (error instanceof Response) {
           try {
@@ -392,17 +456,126 @@ const Home: React.FC = () => {
               </Button>
             )}
           </Box>
-          
-          {/* Debug info - só aparece em desenvolvimento */}
-          {process.env.NODE_ENV === 'development' && (
-            <Box sx={{ mt: 2, p: 1, backgroundColor: '#f5f5f5', borderRadius: 1 }}>
-              <Typography variant="caption" color="text.secondary">
-                Debug: Plataforma - {Capacitor.isNativePlatform() ? 'Mobile Nativo' : 'Web'}
-              </Typography>
-            </Box>
-          )}
         </Box>
       </Box>
+
+      {/* Debug info no frontend - sempre visível */}
+      <Paper sx={{ mt: 3, p: 2, backgroundColor: '#f8f9fa', border: '1px solid #e9ecef' }}>
+        <Typography variant="h6" gutterBottom color="primary">
+          🔍 Debug da API - Chamados
+        </Typography>
+        
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="body2" fontWeight="bold">
+            Plataforma: {Capacitor.isNativePlatform() ? 'Mobile Nativo' : 'Web'}
+          </Typography>
+          <Typography variant="body2">
+            Última verificação: {debugInfo.lastCheck}
+          </Typography>
+        </Box>
+
+        <Divider sx={{ my: 1 }} />
+
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="body2" fontWeight="bold">Cliente ID:</Typography>
+          <Typography 
+            variant="body2" 
+            sx={{ 
+              color: debugInfo.clienteId ? 'green' : 'red',
+              fontFamily: 'monospace',
+              backgroundColor: '#fff',
+              p: 1,
+              borderRadius: 1,
+              border: '1px solid #ddd'
+            }}
+          >
+            {debugInfo.clienteId || 'NÃO ENCONTRADO'}
+          </Typography>
+        </Box>
+
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="body2" fontWeight="bold">Configuração:</Typography>
+          <Typography variant="body2">
+            • Supabase URL: {debugInfo.supabaseUrl ? '✅ Configurado' : '❌ Não configurado'}
+          </Typography>
+          <Typography variant="body2">
+            • Service Key: {debugInfo.serviceKey ? '✅ Configurado' : '❌ Não configurado'}
+          </Typography>
+        </Box>
+
+        {debugInfo.apiUrl && (
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body2" fontWeight="bold">URL da API:</Typography>
+            <Typography 
+              variant="caption" 
+              sx={{ 
+                fontFamily: 'monospace',
+                backgroundColor: '#fff',
+                p: 1,
+                borderRadius: 1,
+                border: '1px solid #ddd',
+                display: 'block',
+                wordBreak: 'break-all'
+              }}
+            >
+              {debugInfo.apiUrl}
+            </Typography>
+          </Box>
+        )}
+
+        {debugInfo.apiError && (
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body2" fontWeight="bold" color="error">
+              Erro da API:
+            </Typography>
+            <Typography 
+              variant="body2" 
+              color="error"
+              sx={{ 
+                fontFamily: 'monospace',
+                backgroundColor: '#fff',
+                p: 1,
+                borderRadius: 1,
+                border: '1px solid #ddd'
+              }}
+            >
+              {debugInfo.apiError}
+            </Typography>
+          </Box>
+        )}
+
+        {debugInfo.apiResponse && (
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="body2" fontWeight="bold">
+              Resposta da API ({Array.isArray(debugInfo.apiResponse) ? debugInfo.apiResponse.length : 0} chamados):
+            </Typography>
+            <Typography 
+              variant="caption" 
+              sx={{ 
+                fontFamily: 'monospace',
+                backgroundColor: '#fff',
+                p: 1,
+                borderRadius: 1,
+                border: '1px solid #ddd',
+                display: 'block',
+                maxHeight: '200px',
+                overflow: 'auto'
+              }}
+            >
+              {JSON.stringify(debugInfo.apiResponse, null, 2)}
+            </Typography>
+          </Box>
+        )}
+
+        <Button 
+          variant="outlined" 
+          size="small" 
+          onClick={() => window.location.reload()}
+          sx={{ mt: 1 }}
+        >
+          Recarregar Página
+        </Button>
+      </Paper>
     </Container>
   );
 };
