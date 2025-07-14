@@ -155,15 +155,15 @@ const ChamadoModalClient: React.FC<ChamadoModalProps> = ({ open, onClose }) => {
           setCliente(clienteReal);
           setEnderecoRegistrado(formatarEndereco(clienteReal.endereco));
           
-          if (localizacaoEscolhida === 'cadastrada') {
-            // Buscar geolocalização do endereço cadastrado
+      if (localizacaoEscolhida === 'cadastrada') {
+        // Buscar geolocalização do endereço cadastrado
             const geo = await buscarGeolocalizacaoEndereco(clienteReal.endereco);
-            setChamado({
+        setChamado({
               cliente_id: clienteReal.id,
-              localizacao: geo ? `${geo.latitude},${geo.longitude}` : '',
+          localizacao: geo ? `${geo.latitude},${geo.longitude}` : '',
               endereco_textual: geo ? geo.enderecoFormatado : formatarEndereco(clienteReal.endereco),
-              status: 'Pendente'
-            });
+          status: 'Pendente'
+        });
           }
         } else {
           console.error('Cliente não encontrado');

@@ -1,7 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Box, Typography, Container, useTheme, useMediaQuery } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
-import { supabase } from '../../Supabase/supabaseRealtimeClient';
+import React from 'react';
+import { Box, Container } from '@mui/material';
 import NotificaoList from './NotificaoList';
 
 // Função utilitária para formatar data/hora
@@ -16,39 +14,10 @@ function formatarDataHora(data: string) {
   return `${dia}/${mes}/${ano} ${hora}:${min}`;
 }
 
-interface FamilyEmergenciesProps {
-  onNewChamado?: (hasNew: boolean) => void;
-}
-
-const FamilyEmergencies: React.FC<FamilyEmergenciesProps> = ({ onNewChamado }) => {
-  const [hasNewChamado, setHasNewChamado] = useState(false);
-  const navigate = useNavigate();
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-
-  // Mantém apenas a lógica de realtime/notificação, não a lista
-  useEffect(() => {
-    const channel = supabase
-      .channel('public:chamado-family-list')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chamado' }, async (payload: any) => {
-        const familiarId = localStorage.getItem('familiarId') || localStorage.getItem('userId');
-        if (!familiarId) return;
-        if (payload.new && Array.isArray(payload.new.notificacao_familiares)) {
-          const notificacoes = payload.new.notificacao_familiares;
-          const familiarNotificado = notificacoes.some((notif: any) => notif.id === familiarId);
-          if (familiarNotificado && payload.new.status !== 'concluído') {
-            setHasNewChamado(true);
-            if (onNewChamado) onNewChamado(true);
-          }
-        }
-      })
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [onNewChamado]);
-
-  // Renderiza apenas o NotificaoList
+// Remover qualquer referência a notificação, estados, efeitos e props relacionados
+// Remover: useState, setHasNewChamado, onNewChamado, useEffect de realtime, props, etc.
+// O componente deve apenas renderizar o NotificaoList normalmente.
+const FamilyEmergencies: React.FC = () => {
   return (
     <Box sx={{
       width: '100vw',

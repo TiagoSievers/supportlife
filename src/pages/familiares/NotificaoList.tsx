@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Paper, Typography, Table, TableHead, TableRow, TableCell, TableBody, Box, CircularProgress, Button, useTheme, useMediaQuery } from '@mui/material';
 import ChamadoModal from '../emer_socorrista/ChamadoModal';
 import { supabase } from '../../Supabase/supabaseRealtimeClient';
+import { useNavigate } from 'react-router-dom';
 
 export interface Chamado {
   id: string;
@@ -58,10 +59,11 @@ const NotificaoList: React.FC = () => {
   const [selectedChamado, setSelectedChamado] = useState<Chamado | null>(null);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const navigate = useNavigate();
 
   const handleVisualizar = async (chamado: Chamado) => {
-    setSelectedChamado(chamado);
-    setModalOpen(true);
+    localStorage.setItem('chamadoFamilia', JSON.stringify(chamado));
+    navigate('/family-emergency-location');
   };
 
   // Função para buscar a lista de chamados do familiar
@@ -72,14 +74,18 @@ const NotificaoList: React.FC = () => {
       const fetchUrl = `${url}/rest/v1/chamado?notificacao_familiares=cs.[{"id":"${familiarId}"}]&status=not.in.(concluído,Pendente,finalizado)`;
       const response = await fetch(fetchUrl, { method: 'GET', headers });
       let data = await response.json();
-      console.log('[NotificaoList] Resultado da lista de chamados:', data);
-      // Ordenar por data_abertura decrescente
       data = data.sort((a: any, b: any) => {
         if (a.data_abertura && b.data_abertura) {
           return new Date(b.data_abertura).getTime() - new Date(a.data_abertura).getTime();
         }
         return (b.id || 0) - (a.id || 0);
       });
+      // Comparar os IDs dos chamados antes de atualizar o estado
+      const prevIds = chamados.map((c) => c.id).join(',');
+      const newIds = data.map((c: any) => c.id).join(',');
+      if (prevIds !== newIds) {
+        console.log('Lista de chamados modificada');
+      }
       setChamados(data);
     } catch (err) {
       setChamados([]);
@@ -89,12 +95,10 @@ const NotificaoList: React.FC = () => {
     }
   };
 
-  // Buscar chamados ao montar o componente
   useEffect(() => {
     fetchChamados();
   }, []);
 
-  // Configurar Supabase realtime subscription
   useEffect(() => {
     const subscription = supabase
       .channel('chamados-changes')
@@ -106,15 +110,10 @@ const NotificaoList: React.FC = () => {
           table: 'chamado'
         },
         (payload) => {
-          console.log('Notificação');
-          ativarSinoNotificacao();
-          // Atualizar a lista quando houver mudanças
           fetchChamados();
         }
       )
       .subscribe();
-
-    // Cleanup subscription on unmount
     return () => {
       subscription.unsubscribe();
     };
@@ -163,12 +162,6 @@ const NotificaoList: React.FC = () => {
           ))}
         </Box>
       )}
-      <ChamadoModal
-        open={modalOpen}
-        chamado={selectedChamado}
-        onClose={handleCloseModal}
-        onFazerAtendimento={() => {}}
-      />
     </Box>
   );
 };

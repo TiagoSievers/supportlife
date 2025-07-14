@@ -143,25 +143,29 @@ const FamilyEmergencyLocation: React.FC = () => {
                 {distancia || '--'}
               </Typography>
             </Box>
-            <Typography variant="body2" sx={{ textAlign: 'left', color: 'text.secondary', mt: 1, position: 'relative', zIndex: 1 }}>
+            {/* Remover/ocultar o Typography do endereço: */}
+            {/* <Typography variant="body2" sx={{ textAlign: 'left', color: 'text.secondary', mt: 1, position: 'relative', zIndex: 1 }}>
               {endereco || 'Endereço não disponível'}
-            </Typography>
+            </Typography> */}
             <Box sx={{ display: 'flex', flexDirection: 'row', gap: 2, mt: 2, width: '100%', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
               <Button
-                variant="contained"
-                color="primary"
-                sx={{ minWidth: 120, fontWeight: 600 }}
-                onClick={() => { console.log('Cheguei!'); }}
-              >
-                Cheguei
-              </Button>
-              <Button
                 variant="outlined"
-                color="error"
-                sx={{ minWidth: 120, fontWeight: 600 }}
-                onClick={() => { console.log('Cancelar!'); }}
+                color="primary"
+                sx={{
+                  width: '100%',
+                  minWidth: 120,
+                  fontWeight: 600,
+                  backgroundColor: '#fff',
+                  color: (theme) => theme.palette.primary.main,
+                  borderColor: (theme) => theme.palette.primary.main,
+                  '&:hover': {
+                    backgroundColor: (theme) => theme.palette.primary.light,
+                    color: '#fff',
+                  },
+                }}
+                onClick={() => window.history.back()}
               >
-                Cancelar
+                Voltar
               </Button>
             </Box>
           </>

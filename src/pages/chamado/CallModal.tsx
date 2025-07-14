@@ -65,7 +65,7 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
           const accessToken = localStorage.getItem('accessToken');
           if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
           if (!accessToken) throw new Error('accessToken não encontrado no localStorage');
-
+          
           // Buscar o chamado para pegar o cliente_id
           const chamadoUrl = `${url}/rest/v1/chamado?id=eq.${chamadoId}`;
           console.log('[CallModal] Buscando chamado:', chamadoUrl);
@@ -97,7 +97,7 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
           });
           const familiares = await familiaresResp.json();
           console.log('[CallModal] Familiares encontrados:', familiares);
-
+          
           // Filtrar apenas os não deletados
           const members = familiares
             .filter((f: any) => !f.deletado)
@@ -109,7 +109,7 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
               email: f.email,
               isEmergencyContact: f.contato_emergencia || false,
             }));
-
+          
           console.log('[CallModal] Members processados:', members);
           setFamilyMembers(members);
         } catch (error) {
