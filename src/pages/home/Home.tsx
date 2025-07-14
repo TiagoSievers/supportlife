@@ -7,6 +7,8 @@ import {
   Dashboard as AdminIcon,
 } from '@mui/icons-material';
 import SOSButton from './SOSButton';
+import { Capacitor } from '@capacitor/core';
+import { Preferences } from '@capacitor/preferences';
 
 const MenuButton: React.FC<{
   to: string;
@@ -131,8 +133,32 @@ const Home: React.FC = () => {
     }
   };
 
+  // Função para sincronizar Preferences com localStorage (igual Login.tsx)
+  const syncPreferencesToLocalStorage = async () => {
+    if (Capacitor.isNativePlatform()) {
+      const keysToSync = [
+        'accessToken',
+        'userToken',
+        'userId',
+        'userEmail',
+        'clienteId',
+        'socorristaId',
+        'administradorId',
+        'familiarId'
+      ];
+      for (const key of keysToSync) {
+        const { value } = await Preferences.get({ key });
+        if (value) {
+          localStorage.setItem(key, value);
+        }
+      }
+    }
+  };
+
   useEffect(() => {
     const verificarChamadoAberto = async () => {
+      // Sincroniza Preferences para localStorage no mobile
+      await syncPreferencesToLocalStorage();
       const clienteId = localStorage.getItem('clienteId');
       if (!clienteId) return;
 
