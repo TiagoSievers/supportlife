@@ -18,48 +18,78 @@ const Login: React.FC = () => {
   const syncPreferencesToLocalStorage = async () => {
     if (Capacitor.isNativePlatform()) {
       try {
+        console.log('[Login] Sincronizando dados do Capacitor Preferences para localStorage...');
+        
         // Lista de chaves que precisamos sincronizar
         const keysToSync = [
           'accessToken',
           'userToken',
           'userId',
           'userEmail',
+          'userType',
           'clienteId',
           'socorristaId',
           'administradorId',
           'familiarId'
         ];
 
+        let syncedKeys = 0;
+        
         // Verifica cada chave no Preferences
         for (const key of keysToSync) {
           const { value } = await Preferences.get({ key });
           if (value) {
             // Se encontrou valor no Preferences, coloca no localStorage
             localStorage.setItem(key, value);
-            console.log(`Sincronizado ${key} do Preferences para localStorage`);
+            console.log(`[Login] Sincronizado ${key}: ${key.includes('Token') || key.includes('Id') ? '[HIDDEN]' : value}`);
+            syncedKeys++;
           }
         }
+
+        console.log(`[Login] Total de chaves sincronizadas: ${syncedKeys}/${keysToSync.length}`);
 
         // Agora verifica se tem dados suficientes para autenticar
         const accessToken = localStorage.getItem('accessToken') || localStorage.getItem('userToken');
         const userId = localStorage.getItem('userId');
 
         if (!accessToken || !userId) {
-          localStorage.clear();
+          console.log('[Login] Dados insuficientes para autenticação automática');
+          await clearAllStorage();
           return false;
         }
 
+        console.log('[Login] Dados suficientes encontrados para autenticação automática');
         return true;
       } catch (error) {
-        console.error('Erro ao sincronizar Preferences:', error);
+        console.error('[Login] Erro ao sincronizar Preferences:', error);
         return false;
       }
     }
     return false;
   };
 
+  // Função para limpar todos os storages
+  const clearAllStorage = async () => {
+    console.log('[Login] Limpando todos os storages...');
+    
+    // Limpa localStorage
+    localStorage.clear();
+    
+    // Se estiver no mobile, limpa também o Preferences
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Preferences.clear();
+        console.log('[Login] Preferences limpo com sucesso');
+      } catch (error) {
+        console.error('[Login] Erro ao limpar Preferences:', error);
+      }
+    }
+  };
+
   // Função auxiliar para salvar em ambos os storages
   const saveToStorage = async (key: string, value: string) => {
+    console.log(`[Login] Salvando ${key}: ${key.includes('Token') || key.includes('Id') || key.includes('Email') ? '[HIDDEN]' : value}`);
+    
     // Salva no localStorage
     localStorage.setItem(key, value);
     
@@ -67,8 +97,9 @@ const Login: React.FC = () => {
     if (Capacitor.isNativePlatform()) {
       try {
         await Preferences.set({ key, value });
+        console.log(`[Login] ${key} salvo no Capacitor Preferences`);
       } catch (error) {
-        console.error('Erro ao salvar no Preferences:', error);
+        console.error(`[Login] Erro ao salvar ${key} no Preferences:`, error);
       }
     }
   };
@@ -76,10 +107,13 @@ const Login: React.FC = () => {
   // Redirecionamento automático se já estiver autenticado
   useEffect(() => {
     const checkAuthAndSync = async () => {
+      console.log(`[Login] Verificando autenticação. Plataforma: ${Capacitor.isNativePlatform() ? 'Mobile Nativo' : 'Web'}`);
+      
       // Se estiver no mobile, tenta sincronizar primeiro
       if (Capacitor.isNativePlatform()) {
         const hasSyncedData = await syncPreferencesToLocalStorage();
         if (!hasSyncedData) {
+          console.log('[Login] Sincronização falhou ou dados insuficientes');
           return; // Se não conseguiu sincronizar, não tenta redirecionar
         }
       }
@@ -89,25 +123,29 @@ const Login: React.FC = () => {
       const userId = localStorage.getItem('userId');
 
       if (!accessToken || !userId) {
-        localStorage.clear();
+        console.log('[Login] Credenciais não encontradas, limpando storages');
+        await clearAllStorage();
         return;
       }
 
+      console.log('[Login] Credenciais encontradas, verificando tipo de usuário...');
+
       // Verificar e redirecionar baseado no tipo de usuário
       if (localStorage.getItem('clienteId')) {
-        console.log('Redirecionando cliente autenticado para /home');
+        console.log('[Login] Redirecionando cliente autenticado para /home');
         navigate('/home', { replace: true });
       } else if (localStorage.getItem('socorristaId')) {
-        console.log('Redirecionando socorrista autenticado para /partner-emergencies');
+        console.log('[Login] Redirecionando socorrista autenticado para /partner-emergencies');
         navigate('/partner-emergencies', { replace: true });
       } else if (localStorage.getItem('administradorId')) {
-        console.log('Redirecionando administrador autenticado para /admin-panel');
+        console.log('[Login] Redirecionando administrador autenticado para /admin-panel');
         navigate('/admin-panel', { replace: true });
       } else if (localStorage.getItem('familiarId')) {
-        console.log('Redirecionando familiar autenticado para /family-emergencies');
+        console.log('[Login] Redirecionando familiar autenticado para /family-emergencies');
         navigate('/family-emergencies', { replace: true });
       } else {
-        localStorage.clear();
+        console.log('[Login] Tipo de usuário não identificado, limpando storages');
+        await clearAllStorage();
       }
     };
 
@@ -120,33 +158,43 @@ const Login: React.FC = () => {
       setLoading(true);
       setError(null);
       
-      // Limpa o localStorage antes de fazer o login
-      localStorage.clear();
-      if (Capacitor.isNativePlatform()) {
-        try {
-          await Preferences.clear();
-        } catch (error) {
-          console.error('Erro ao limpar Preferences:', error);
-        }
-      }
+      console.log('[Login] Iniciando processo de login...');
+      
+      // Limpa todos os storages antes de fazer o login
+      await clearAllStorage();
       
       const { authData } = await login(email, password);
       const user_id = authData?.user?.id || authData?.user?.user_id || authData?.user_id || authData?.id;
+      
       if (!user_id) {
         setError('Não foi possível identificar o usuário.');
         setLoading(false);
         return;
       }
 
+      console.log('[Login] Login bem-sucedido, identificando tipo de usuário...');
+
+      // Salva dados básicos do usuário primeiro
+      await saveToStorage('userEmail', email);
+      await saveToStorage('userId', user_id);
+      
+      // Salva o token de acesso se disponível
+      if (authData?.access_token) {
+        await saveToStorage('accessToken', authData.access_token);
+      }
+      if (authData?.token) {
+        await saveToStorage('userToken', authData.token);
+      }
+
+      // Verifica tipo de usuário e salva informações específicas
       const isCliente = await existsInCliente(user_id);
       if (isCliente) {
-        console.log('Usuário pertence à tabela cliente');
-        await saveToStorage('userEmail', email);
-        await saveToStorage('userId', user_id);
+        console.log('[Login] Usuário identificado como cliente');
         await saveToStorage('userType', 'cliente');
         const cliente = await getClienteByUserId(user_id);
         if (cliente && cliente.id) {
           await saveToStorage('clienteId', cliente.id.toString());
+          console.log('[Login] ClienteId salvo nos storages');
         }
         navigate('/home');
         return;
@@ -154,13 +202,12 @@ const Login: React.FC = () => {
 
       const isSocorrista = await existsInSocorrista(user_id);
       if (isSocorrista) {
-        console.log('Usuário pertence à tabela socorrista');
-        await saveToStorage('userEmail', email);
-        await saveToStorage('userId', user_id);
+        console.log('[Login] Usuário identificado como socorrista');
         await saveToStorage('userType', 'socorrista');
         const socorrista = await getSocorristaByUserId(user_id);
         if (socorrista && socorrista.id) {
           await saveToStorage('socorristaId', socorrista.id.toString());
+          console.log('[Login] SocorristaId salvo nos storages');
         }
         navigate('/partner-emergencies');
         return;
@@ -168,13 +215,12 @@ const Login: React.FC = () => {
 
       const isAdministrador = await existsInAdministrador(user_id);
       if (isAdministrador) {
-        console.log('Usuário pertence à tabela administrador');
-        await saveToStorage('userEmail', email);
-        await saveToStorage('userId', user_id);
+        console.log('[Login] Usuário identificado como administrador');
         await saveToStorage('userType', 'administrador');
         const administrador = await getAdministradorByUserId(user_id);
         if (administrador && administrador.id) {
           await saveToStorage('administradorId', administrador.id.toString());
+          console.log('[Login] AdministradorId salvo nos storages');
         }
         navigate('/admin-panel');
         return;
@@ -182,22 +228,25 @@ const Login: React.FC = () => {
 
       const isFamiliar = await existsInFamiliar(user_id);
       if (isFamiliar) {
-        console.log('Usuário pertence à tabela familiares');
-        await saveToStorage('userEmail', email);
-        await saveToStorage('userId', user_id);
+        console.log('[Login] Usuário identificado como familiar');
         await saveToStorage('userType', 'familiar');
         const familiar = await getFamiliarByUserId(user_id);
         if (familiar && familiar.id) {
           await saveToStorage('familiarId', familiar.id.toString());
+          console.log('[Login] FamiliarId salvo nos storages');
         }
         navigate('/family-emergencies');
         return;
       }
 
+      console.log('[Login] Usuário não encontrado em nenhuma tabela específica');
       setError('Usuário não autorizado. Entre em contato com o suporte.');
+      await clearAllStorage();
+      
     } catch (error) {
-      console.error('Erro ao realizar login:', error);
+      console.error('[Login] Erro ao realizar login:', error);
       setError('Email ou senha incorretos. Por favor, tente novamente.');
+      await clearAllStorage();
     } finally {
       setLoading(false);
     }
@@ -208,9 +257,11 @@ const Login: React.FC = () => {
       setLoading(true);
       setError(null);
       
+      console.log('[Login] Iniciando recuperação de senha para:', email);
       await recoverPassword(email);
       alert('Instruções de recuperação de senha enviadas para o seu email.');
     } catch (error) {
+      console.error('[Login] Erro na recuperação de senha:', error);
       setError('Erro ao enviar instruções de recuperação de senha. Por favor, tente novamente.');
     } finally {
       setLoading(false);
@@ -228,6 +279,15 @@ const Login: React.FC = () => {
         <Typography color="error" sx={{ mb: 2 }}>
           {error}
         </Typography>
+      )}
+      
+      {/* Debug info - só aparece em desenvolvimento */}
+      {process.env.NODE_ENV === 'development' && (
+        <Box sx={{ mb: 2, p: 1, backgroundColor: '#f5f5f5', borderRadius: 1, width: '100%' }}>
+          <Typography variant="caption" color="text.secondary">
+            Debug: Plataforma - {Capacitor.isNativePlatform() ? 'Mobile Nativo' : 'Web'}
+          </Typography>
+        </Box>
       )}
       
       {showLogin ? (
@@ -314,4 +374,4 @@ const Login: React.FC = () => {
   );
 };
 
-export default Login; 
+export default Login;

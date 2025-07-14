@@ -56,6 +56,44 @@ const Home: React.FC = () => {
   const TEMPO_ESPERA = 3000; // 3 segundos para cada tentativa
   const INTERVALO_BUSCA = 2000; // 2 segundos entre buscas
 
+  // Função para obter valor do storage (mobile ou web)
+  const getStorageValue = async (key: string): Promise<string | null> => {
+    if (Capacitor.isNativePlatform()) {
+      const { value } = await Preferences.get({ key });
+      return value;
+    } else {
+      return localStorage.getItem(key);
+    }
+  };
+
+  // Função para salvar valor no storage (mobile ou web)
+  const setStorageValue = async (key: string, value: string): Promise<void> => {
+    if (Capacitor.isNativePlatform()) {
+      await Preferences.set({ key, value });
+    } else {
+      localStorage.setItem(key, value);
+    }
+  };
+
+  // Função para remover valor do storage (mobile ou web)
+  const removeStorageValue = async (key: string): Promise<void> => {
+    if (Capacitor.isNativePlatform()) {
+      await Preferences.remove({ key });
+    } else {
+      localStorage.removeItem(key);
+    }
+  };
+
+  // Função para obter todas as chaves do storage (mobile ou web)
+  const getAllStorageKeys = async (): Promise<string[]> => {
+    if (Capacitor.isNativePlatform()) {
+      const { keys } = await Preferences.keys();
+      return keys;
+    } else {
+      return Object.keys(localStorage);
+    }
+  };
+
   const obterLocalizacao = async (): Promise<void> => {
     if (obtendoLocalizacao) return;
     
@@ -111,11 +149,11 @@ const Home: React.FC = () => {
       
       if (error.code === 1) {
         mensagemErro += 'Por favor, permita o acesso à sua localização nas configurações do navegador.';
-        setBuscaAutomatica(false); // Para a busca automática se não tiver permissão
+        setBuscaAutomatica(false);
         console.log('❌ Busca automática parada: Sem permissão de localização');
       } else if (error.code === 2) {
         mensagemErro += 'Serviço de localização indisponível. Verifique se o GPS está ativado.';
-        setBuscaAutomatica(false); // Para a busca automática se GPS estiver desativado
+        setBuscaAutomatica(false);
         console.log('❌ Busca automática parada: GPS desativado');
       } else if (error.code === 3) {
         mensagemErro += 'Tempo esgotado. Continuando busca...';
@@ -133,39 +171,28 @@ const Home: React.FC = () => {
     }
   };
 
-  // Função para sincronizar Preferences com localStorage (igual Login.tsx)
-  const syncPreferencesToLocalStorage = async () => {
-    if (Capacitor.isNativePlatform()) {
-      const keysToSync = [
-        'accessToken',
-        'userToken',
-        'userId',
-        'userEmail',
-        'clienteId',
-        'socorristaId',
-        'administradorId',
-        'familiarId'
-      ];
-      for (const key of keysToSync) {
-        const { value } = await Preferences.get({ key });
-        if (value) {
-          localStorage.setItem(key, value);
-        }
-      }
-    }
-  };
-
   useEffect(() => {
     const verificarChamadoAberto = async () => {
-      // Sincroniza Preferences para localStorage no mobile
-      await syncPreferencesToLocalStorage();
-      const clienteId = localStorage.getItem('clienteId');
-      if (!clienteId) return;
-
       try {
+        console.log(`[Home] Plataforma: ${Capacitor.isNativePlatform() ? 'Mobile Nativo' : 'Web'}`);
+        
+        // Obter clienteId do storage correto
+        const clienteId = await getStorageValue('clienteId');
+        console.log('[Home] ClienteId obtido:', clienteId);
+        
+        if (!clienteId) {
+          console.log('[Home] Nenhum clienteId encontrado');
+          return;
+        }
+
+        // Obter variáveis de ambiente
         const url = process.env.REACT_APP_SUPABASE_URL;
         const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-        if (!url || !serviceKey) return;
+        
+        if (!url || !serviceKey) {
+          console.error('[Home] Variáveis de ambiente não configuradas:', { url: !!url, serviceKey: !!serviceKey });
+          return;
+        }
 
         // Buscar apenas chamados com status 'Pendente' ou 'Aceito / Em andamento' e criados hoje
         const today = new Date();
@@ -173,42 +200,67 @@ const Home: React.FC = () => {
         const mm = String(today.getMonth() + 1).padStart(2, '0');
         const dd = String(today.getDate()).padStart(2, '0');
         const todayStr = `${yyyy}-${mm}-${dd}`;
+        
         const endpoint = `${url}/rest/v1/chamado?cliente_id=eq.${clienteId}&status=in.(Pendente,"Aceito / Em andamento")&data_abertura=gte.${todayStr}T00:00:00&data_abertura=lte.${todayStr}T23:59:59&order=data_abertura.desc&limit=1`;
+        
         console.log('[Home] Fazendo GET chamado:', endpoint);
-        const response = await fetch(
-          endpoint,
-          {
-            headers: {
-              'apikey': serviceKey,
-              'Authorization': `Bearer ${serviceKey}`,
-              'Content-Type': 'application/json',
-            },
-          }
-        );
+        
+        const response = await fetch(endpoint, {
+          headers: {
+            'apikey': serviceKey,
+            'Authorization': `Bearer ${serviceKey}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('[Home] Erro na resposta da API:', response.status, errorText);
+          return;
+        }
+
         const data = await response.json();
         console.log('[Home] Resposta GET chamado:', data);
+        
         if (data && data.length > 0) {
           const chamado = data[0];
-          // Salva chamadoId e clienteId no localStorage antes do redirecionamento
-          localStorage.setItem('chamadoId', chamado.id.toString());
-          localStorage.setItem('clienteId', chamado.cliente_id.toString());
-          // Limpa todos os cronômetros antigos do localStorage
-          Object.keys(localStorage).forEach(key => {
-            if (key.startsWith('cronometro_start_time_')) {
-              localStorage.removeItem(key);
-            }
-          });
-          // Ajuste os status conforme sua base
-          if (chamado.status !== 'finalizado' && chamado.status !== 'concluído') {
-            navigate('/emergency');
+          console.log('[Home] Chamado encontrado:', chamado);
+          
+          // Salva chamadoId e clienteId no storage correto
+          await setStorageValue('chamadoId', chamado.id.toString());
+          await setStorageValue('clienteId', chamado.cliente_id.toString());
+          
+          // Limpa todos os cronômetros antigos do storage
+          const allKeys = await getAllStorageKeys();
+          const cronometroKeys = allKeys.filter(key => key.startsWith('cronometro_start_time_'));
+          
+          for (const key of cronometroKeys) {
+            await removeStorageValue(key);
           }
+          
+          console.log('[Home] Cronômetros limpos:', cronometroKeys);
+          
+          // Verifica se deve redirecionar
+          if (chamado.status !== 'finalizado' && chamado.status !== 'concluído') {
+            console.log('[Home] Redirecionando para emergency, status:', chamado.status);
+            navigate('/emergency');
+          } else {
+            console.log('[Home] Chamado já finalizado, não redirecionando');
+          }
+        } else {
+          console.log('[Home] Nenhum chamado ativo encontrado');
         }
+        
       } catch (error) {
         console.error('[Home] Erro ao buscar chamado:', error);
+        
         if (error instanceof Response) {
-          error.text().then(text => {
+          try {
+            const text = await error.text();
             console.error('[Home] Erro resposta do fetch:', text);
-          });
+          } catch (e) {
+            console.error('[Home] Erro ao ler resposta de erro:', e);
+          }
         }
       }
     };
@@ -280,6 +332,7 @@ const Home: React.FC = () => {
           transform: 'translate(-50%, -50%)',
         }}
       />
+      
       {/* Conteúdo principal */}
       <Box sx={{ textAlign: 'center', position: 'relative', zIndex: 1 }}>
         <Typography 
@@ -295,6 +348,7 @@ const Home: React.FC = () => {
         </Typography>
         
         <SOSButton />
+        
         {/* Localização abaixo do botão */}
         <Box sx={{ mt: 2 }}>
           <Typography variant="body2" color="text.secondary">
@@ -322,6 +376,7 @@ const Home: React.FC = () => {
               {erro}
             </Typography>
           )}
+          
           {/* Botões de controle */}
           <Box sx={{ mt: 2, display: 'flex', gap: 1, justifyContent: 'center' }}>
             {!buscaAutomatica && precisao && precisao > PRECISAO_DESEJADA && (
@@ -337,10 +392,19 @@ const Home: React.FC = () => {
               </Button>
             )}
           </Box>
+          
+          {/* Debug info - só aparece em desenvolvimento */}
+          {process.env.NODE_ENV === 'development' && (
+            <Box sx={{ mt: 2, p: 1, backgroundColor: '#f5f5f5', borderRadius: 1 }}>
+              <Typography variant="caption" color="text.secondary">
+                Debug: Plataforma - {Capacitor.isNativePlatform() ? 'Mobile Nativo' : 'Web'}
+              </Typography>
+            </Box>
+          )}
         </Box>
       </Box>
     </Container>
   );
 };
 
-export default Home; 
+export default Home;
