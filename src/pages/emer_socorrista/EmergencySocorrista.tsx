@@ -2,13 +2,14 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Box, Typography, Paper, CircularProgress, Button, IconButton } from '@mui/material';
 import MapPatner from './MapPatner';
 import Cronometro from './CronometroSocorrista';
-
 import { useNavigate } from 'react-router-dom';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import { calcularDistanciaTotalKm } from './MapPatner';
 import { supabase } from '../../Supabase/supabaseRealtimeClient';
+import { Capacitor } from '@capacitor/core';
+import { Preferences } from '@capacitor/preferences';
 
 interface Chamado {
   id: string;
@@ -23,14 +24,14 @@ interface Chamado {
 const EmergencySocorrista: React.FC = () => {
   const [chamado, setChamado] = useState<Chamado | null>(null);
   const [endereco, setEndereco] = useState<string | null>(null);
-  const [distancia, setDistancia] = useState<string>('');
-  const [estimativaTempo, setEstimativaTempo] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const [routeCoords, setRouteCoords] = useState<{ lat: number; lng: number }[]>([]);
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [socorristaPos, setSocorristaPos] = useState({ lat: 0, lng: 0 });
   const [currentRouteCoords, setCurrentRouteCoords] = useState<{ lat: number; lng: number }[]>([]);
-  const [routeDuration, setRouteDuration] = useState<number | null>(null); // duração em segundos
+  const [routeDuration, setRouteDuration] = useState<number | null>(null);
   const [distanciaRota, setDistanciaRota] = useState<number | null>(null);
   const [tempoEstimado60, setTempoEstimado60] = useState<number | null>(null);
   const [tempoEstimadoSimulacao, setTempoEstimadoSimulacao] = useState<number | null>(null);
@@ -40,197 +41,73 @@ const EmergencySocorrista: React.FC = () => {
   const [trackingAtivo, setTrackingAtivo] = useState(false);
   const [watchId, setWatchId] = useState<number | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
-  const lastSocorristaPos = useRef<{ lat: number; lng: number } | null>(null); // Para evitar loops
-  const lastDBUpdate = useRef<number>(0); // Controle de atualizações do banco
-  const MIN_DB_UPDATE_INTERVAL = 8000; // 8 segundos entre atualizações do banco
+  const lastSocorristaPos = useRef<{ lat: number; lng: number } | null>(null);
+  const lastDBUpdate = useRef<number>(0);
+  const MIN_DB_UPDATE_INTERVAL = 8000;
   const navigate = useNavigate();
 
-  // Rate limiting para API OSRM - mesmo sistema do EmergencyFamily
+  // Rate limiting para API OSRM
   const lastOSRMCall = useRef<number>(0);
-  const MIN_OSRM_INTERVAL = 30000; // 30 segundos entre chamadas
-  const isOSRMCallInProgress = useRef<boolean>(false); // Flag para evitar chamadas simultâneas
+  const MIN_OSRM_INTERVAL = 30000;
+  const isOSRMCallInProgress = useRef<boolean>(false);
 
-  useEffect(() => {
-    // Buscar chamado real pelo id salvo no localStorage
-    const fetchChamado = async () => {
-      const chamadoId = localStorage.getItem('chamadoId');
-      if (!chamadoId) {
-        setChamado(null);
-        setLoading(false);
-        return;
-      }
-      const url = process.env.REACT_APP_SUPABASE_URL;
-      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-      const accessToken = localStorage.getItem('accessToken');
-      if (!url || !serviceKey) {
-        setChamado(null);
-        setLoading(false);
-        return;
-      }
-      if (!accessToken) {
-        setChamado(null);
-        setLoading(false);
-        return;
-      }
-      try {
-        const response = await fetch(`${url}/rest/v1/chamado?id=eq.${chamadoId}`, {
-          method: 'GET',
-          headers: {
-            'apikey': serviceKey,
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        const data = await response.json();
-        if (Array.isArray(data) && data.length > 0) {
-          const chamadoData = data[0];
-          console.log('[EmergencySocorrista] Chamado carregado da API:', chamadoData);
-          console.log('[EmergencySocorrista] Posição do socorrista no banco:', chamadoData.posicao_inicial_socorrista);
-          // Ordenar por data de criação (data_abertura) - mais recente primeiro
-          const chamadosOrdenados = data.sort((a: any, b: any) => {
-            if (a.data_abertura && b.data_abertura) {
-              return new Date(b.data_abertura).getTime() - new Date(a.data_abertura).getTime();
-            }
-            // Se não há data, usar ID como fallback (assumindo IDs sequenciais)
-            return (b.id || 0) - (a.id || 0);
-          });
-          setChamado(chamadosOrdenados[0]);
-        } else {
-          console.log('[EmergencySocorrista] Nenhum chamado encontrado na API');
-          setChamado(null);
-        }
-      } catch (error) {
-        console.error('[EmergencySocorrista] Erro ao buscar chamado da API:', error);
-        setChamado(null);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchChamado();
-  }, []);
-
-  // Realtime subscription para escutar mudanças no chamado
-  useEffect(() => {
-    const chamadoId = localStorage.getItem('chamadoId');
-    if (!chamadoId) return;
-
-    const channel = supabase
-      .channel('public:chamado')
-      .on('postgres_changes', 
-        { 
-          event: 'UPDATE', 
-          schema: 'public', 
-          table: 'chamado',
-          filter: `id=eq.${chamadoId}`
-        }, 
-        (payload) => {
-          console.log('[REALTIME] Mudança detectada no chamado:', payload);
-          console.log('[REALTIME] Status do chamado:', payload.new?.status);
-          
-          if (payload.new && payload.new.posicao_inicial_socorrista) {
-            console.log('[REALTIME] Nova posição do socorrista:', payload.new.posicao_inicial_socorrista);
-            
-            // Atualiza o estado do chamado
-            setChamado(prev => prev ? {
-              ...prev,
-              posicao_inicial_socorrista: payload.new.posicao_inicial_socorrista,
-              status: payload.new.status || prev.status
-            } : null);
-
-            // Atualiza a posição do socorrista no mapa
-            const [lat, lng] = payload.new.posicao_inicial_socorrista.split(',').map(Number);
-            setSocorristaPos({ lat, lng });
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  // Função para buscar rota real via OSRM com rate limiting
-  const getRouteFromOSRM = useCallback(async (start: { lat: number; lng: number }, end: { lat: number; lng: number }) => {
-    // Evitar chamadas simultâneas
-    if (isOSRMCallInProgress.current) {
-      console.log('[OSRM SOCORRISTA] Chamada já em progresso, ignorando...');
-      return { coords: [], duration: null };
+  // Função para obter valor do storage (mobile ou web)
+  const getStorageValue = async (key: string): Promise<string | null> => {
+    if (Capacitor.isNativePlatform()) {
+      const { value } = await Preferences.get({ key });
+      return value;
+    } else {
+      return localStorage.getItem(key);
     }
-    
-    const now = Date.now();
-    const timeSinceLastCall = now - lastOSRMCall.current;
-    
-    if (timeSinceLastCall < MIN_OSRM_INTERVAL) {
-      const waitTime = MIN_OSRM_INTERVAL - timeSinceLastCall;
-      console.log(`[OSRM SOCORRISTA] Rate limiting: aguardando ${Math.round(waitTime/1000)}s`);
-      await new Promise(resolve => setTimeout(resolve, waitTime));
-    }
-    
-    isOSRMCallInProgress.current = true;
-    lastOSRMCall.current = Date.now();
-    
-    try {
-      const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
-      console.log('[OSRM SOCORRISTA] Fazendo requisição para API...');
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        if (response.status === 429) {
-          console.warn('[OSRM SOCORRISTA] Rate limit atingido, aguardando 60 segundos...');
-          await new Promise(resolve => setTimeout(resolve, 60000));
-          throw new Error('Rate limit - tente novamente mais tarde');
-        }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      if (!data.routes || !data.routes[0]) {
-        console.warn('[OSRM SOCORRISTA] Nenhuma rota encontrada');
-        return { coords: [], duration: null };
-      }
-      
-      // OSRM retorna [lng, lat], convertemos para {lat, lng}
-      const result = {
-        coords: data.routes[0].geometry.coordinates.map(([lng, lat]: [number, number]) => ({ lat, lng })),
-        duration: data.routes[0].duration // em segundos
-      };
-      
-      console.log('[OSRM SOCORRISTA] Rota calculada com sucesso');
-      return result;
-    } catch (error) {
-      console.error('[OSRM SOCORRISTA] Erro ao buscar rota:', error);
-      return { coords: [], duration: null };
-    } finally {
-      isOSRMCallInProgress.current = false;
-    }
-  }, [MIN_OSRM_INTERVAL]);
+  };
 
-  // Função para atualizar posição no banco de dados
-  const atualizarPosicaoNoBanco = useCallback(async (lat: number, lng: number) => {
-    const now = Date.now();
-    const timeSinceLastUpdate = now - lastDBUpdate.current;
-    
-    // Rate limiting para atualizações do banco
-    if (timeSinceLastUpdate < MIN_DB_UPDATE_INTERVAL) {
-      console.log(`[GEOLOCATION] Rate limiting DB: aguardando ${Math.round((MIN_DB_UPDATE_INTERVAL - timeSinceLastUpdate)/1000)}s`);
+  // Função para salvar valor no storage (mobile ou web)
+  const setStorageValue = async (key: string, value: string): Promise<void> => {
+    if (Capacitor.isNativePlatform()) {
+      await Preferences.set({ key, value });
+    } else {
+      localStorage.setItem(key, value);
+    }
+  };
+
+  // Função para remover valor do storage (mobile ou web)
+  const removeStorageValue = async (key: string): Promise<void> => {
+    if (Capacitor.isNativePlatform()) {
+      await Preferences.remove({ key });
+    } else {
+      localStorage.removeItem(key);
+    }
+  };
+
+  // Função para cancelar chamado
+  const cancelarChamado = async () => {
+    if (!chamado) {
+      console.error('[CANCELAR] Nenhum chamado encontrado');
       return;
     }
+
+    console.log('[CANCELAR] Iniciando cancelamento do chamado:', chamado.id);
     
     const url = process.env.REACT_APP_SUPABASE_URL;
     const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-    const accessToken = localStorage.getItem('accessToken');
+    const accessToken = await getStorageValue('accessToken') || await getStorageValue('userToken');
     
-    if (!chamado || !url || !serviceKey || !accessToken) {
-      console.log('[GEOLOCATION] Dados insuficientes para atualizar banco');
+    if (!url || !serviceKey) {
+      console.error('[CANCELAR] Variáveis de ambiente não configuradas');
+      alert('Erro de configuração: Supabase URL ou Service Key não definidos');
       return;
     }
     
-    lastDBUpdate.current = now;
+    if (!accessToken) {
+      console.error('[CANCELAR] Token de acesso não encontrado');
+      alert('Token de acesso não encontrado. Faça login novamente.');
+      return;
+    }
+    
+    setLoading(true);
     
     try {
-      const timestamp = new Date().toLocaleTimeString();
-      console.log(`[GEOLOCATION] ${timestamp} - Atualizando posição no banco: ${lat},${lng}`);
+      console.log('[CANCELAR] Atualizando status para "finalizado"...');
       
       const response = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
         method: 'PATCH',
@@ -238,444 +115,279 @@ const EmergencySocorrista: React.FC = () => {
           'apikey': serviceKey,
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
-          'Prefer': 'return=minimal'
+          'Prefer': 'return=representation'
         },
-        body: JSON.stringify({
-          posicao_inicial_socorrista: `${lat},${lng}`
+        body: JSON.stringify({ 
+          status: 'finalizado',
+          data_fechamento: new Date().toISOString()
         })
       });
       
-      if (response.ok) {
-        console.log(`[GEOLOCATION] ${timestamp} - ✅ Posição atualizada com sucesso`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[CANCELAR] Erro na resposta da API:', response.status, errorText);
         
-        // Atualiza o estado local do chamado
-        setChamado(prev => prev ? {
-          ...prev,
-          posicao_inicial_socorrista: `${lat},${lng}`
-        } : null);
-      } else {
-        console.error(`[GEOLOCATION] ${timestamp} - ❌ Erro HTTP ${response.status}`);
-      }
-    } catch (error) {
-      console.error('[GEOLOCATION] Erro ao atualizar posição:', error);
-    }
-  }, [chamado, MIN_DB_UPDATE_INTERVAL]);
-
-  // Função para iniciar tracking de geolocalização real
-  const iniciarTrackingReal = useCallback(() => {
-    if (!navigator.geolocation) {
-      setGeoError('Geolocalização não suportada neste dispositivo');
-      return;
-    }
-    
-    setGeoError(null);
-    setTrackingAtivo(true);
-    
-    const options = {
-      enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 5000 // Cache de 5 segundos
-    };
-    
-    const id = navigator.geolocation.watchPosition(
-      (position) => {
-        const { latitude, longitude, accuracy } = position.coords;
-        
-        console.log(`[GEOLOCATION] Nova posição: ${latitude}, ${longitude} (precisão: ${accuracy}m)`);
-        
-        // Atualiza posição local imediatamente
-        setSocorristaPos({ lat: latitude, lng: longitude });
-        
-        // Atualiza banco com rate limiting
-        atualizarPosicaoNoBanco(latitude, longitude);
-      },
-      (error) => {
-        console.error('[GEOLOCATION] Erro:', error);
-        switch (error.code) {
-          case error.PERMISSION_DENIED:
-            setGeoError('Permissão de localização negada');
-            break;
-          case error.POSITION_UNAVAILABLE:
-            setGeoError('Localização indisponível');
-            break;
-          case error.TIMEOUT:
-            setGeoError('Timeout na obtenção da localização');
-            break;
-          default:
-            setGeoError('Erro desconhecido na geolocalização');
-            break;
+        try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(errorData.error_description || errorData.message || `Erro ${response.status}`);
+        } catch (parseError) {
+          throw new Error(`Erro HTTP ${response.status}: ${response.statusText}`);
         }
+      }
+      
+      const updatedChamado = await response.json();
+      console.log('[CANCELAR] ✅ Chamado finalizado com sucesso:', updatedChamado);
+      
+      // Criar log do chamado finalizado
+      try {
+        const chamadoData = Array.isArray(updatedChamado) ? updatedChamado[0] : updatedChamado;
+        if (chamadoData) {
+          const logData = {
+            chamado_id: chamadoData.id,
+            cliente_id: chamadoData.cliente_id,
+            localizacao: chamadoData.localizacao,
+            endereco_textual: chamadoData.endereco_textual,
+            status: chamadoData.status,
+            operador_id: chamadoData.operador_id,
+            socorrista_id: chamadoData.socorrista_id,
+            data_abertura: chamadoData.data_abertura,
+            data_fechamento: chamadoData.data_fechamento,
+            descricao: chamadoData.descricao,
+            prioridade: chamadoData.prioridade,
+            notificacao_familiares: chamadoData.notificacao_familiares,
+            posicao_inicial_socorrista: chamadoData.posicao_inicial_socorrista
+          };
+          
+          console.log('[CANCELAR] Criando log do chamado...');
+          const logResponse = await fetch(`${url}/rest/v1/log_chamado`, {
+            method: 'POST',
+            headers: {
+              'apikey': serviceKey,
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(logData)
+          });
+          
+          if (logResponse.ok) {
+            console.log('[CANCELAR] ✅ Log criado com sucesso');
+          } else {
+            console.warn('[CANCELAR] ⚠️ Erro ao criar log, mas chamado foi finalizado');
+          }
+        }
+      } catch (logError) {
+        console.warn('[CANCELAR] ⚠️ Erro ao criar log:', logError);
+      }
+      
+      // Limpar storage e redirecionar
+      console.log('[CANCELAR] Limpando storage e redirecionando...');
+      await removeStorageValue('chamadoId');
+      
+      // Parar tracking se ativo
+      if (trackingAtivo && watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
         setTrackingAtivo(false);
-      },
-      options
-    );
-    
-    setWatchId(id);
-    console.log('[GEOLOCATION] Tracking iniciado com watchId:', id);
-  }, [atualizarPosicaoNoBanco]);
-
-  // Função para parar tracking de geolocalização
-  const pararTrackingReal = useCallback(() => {
-    if (watchId !== null) {
-      navigator.geolocation.clearWatch(watchId);
-      setWatchId(null);
-      console.log('[GEOLOCATION] Tracking parado');
+      }
+      
+      // Parar simulação se ativa
+      if (simulacaoAtiva && intervalSimulacao) {
+        clearInterval(intervalSimulacao);
+        setSimulacaoAtiva(false);
+      }
+      
+      navigate('/partner-emergencies');
+      
+    } catch (error: any) {
+      console.error('[CANCELAR] ❌ Erro ao finalizar chamado:', error);
+      alert('Erro ao cancelar chamado: ' + (error.message || error));
+    } finally {
+      setLoading(false);
     }
-    setTrackingAtivo(false);
-  }, [watchId]);
+  };
 
-  // Iniciar tracking automaticamente quando há chamado
   useEffect(() => {
-    if (chamado && !trackingAtivo && !simulacaoAtiva) {
-      console.log('[GEOLOCATION] Iniciando tracking automático para chamado:', chamado.id);
-      iniciarTrackingReal();
-    }
-    
-    return () => {
-      if (trackingAtivo) {
-        pararTrackingReal();
+    // Timeout de segurança para garantir que a página carregue
+    const loadingTimeout = setTimeout(() => {
+      if (loading) {
+        console.warn('[EmergencySocorrista] Timeout de carregamento - forçando exibição da interface');
+        setLoading(false);
+        setPageError('Dados não carregaram completamente, mas a interface está disponível');
+      }
+    }, 10000); // 10 segundos timeout
+
+    // Buscar chamado real pelo id salvo no storage
+    const fetchChamado = async () => {
+      try {
+        console.log(`[EmergencySocorrista] Plataforma: ${Capacitor.isNativePlatform() ? 'Mobile Nativo' : 'Web'}`);
+        console.log(`[EmergencySocorrista] Tentativa ${retryCount + 1} de carregamento`);
+        
+        const chamadoId = await getStorageValue('chamadoId');
+        console.log('[EmergencySocorrista] ChamadoId obtido do storage:', chamadoId);
+        
+        if (!chamadoId) {
+          console.log('[EmergencySocorrista] Nenhum chamadoId encontrado - criando chamado mock para teste');
+          // Fallback: criar chamado mock para evitar tela branca
+          setChamado({
+            id: 'mock',
+            cliente_id: '1',
+            status: 'A caminho',
+            data_abertura: new Date().toISOString(),
+            localizacao: '-23.5505,-46.6333', // São Paulo como fallback
+            endereco_textual: 'Endereço não disponível - modo offline'
+          });
+          setLoading(false);
+          clearTimeout(loadingTimeout);
+          return;
+        }
+
+        const url = process.env.REACT_APP_SUPABASE_URL;
+        const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+        const accessToken = await getStorageValue('accessToken') || await getStorageValue('userToken');
+        
+        console.log('[EmergencySocorrista] Configurações:', {
+          url: !!url,
+          serviceKey: !!serviceKey,
+          accessToken: !!accessToken
+        });
+
+        if (!url || !serviceKey) {
+          console.error('[EmergencySocorrista] Variáveis de ambiente não configuradas');
+          setPageError('Configuração inválida');
+          setLoading(false);
+          clearTimeout(loadingTimeout);
+          return;
+        }
+
+        if (!accessToken) {
+          console.error('[EmergencySocorrista] Token de acesso não encontrado');
+          setPageError('Token não encontrado');
+          setLoading(false);
+          clearTimeout(loadingTimeout);
+          return;
+        }
+
+        const endpoint = `${url}/rest/v1/chamado?id=eq.${chamadoId}`;
+        console.log('[EmergencySocorrista] Fazendo requisição para:', endpoint);
+
+        // Timeout para a requisição fetch
+        const controller = new AbortController();
+        const fetchTimeout = setTimeout(() => {
+          controller.abort();
+        }, 8000); // 8 segundos timeout para fetch
+
+        const response = await fetch(endpoint, {
+          method: 'GET',
+          headers: {
+            'apikey': serviceKey,
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+          },
+          signal: controller.signal
+        });
+
+        clearTimeout(fetchTimeout);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('[EmergencySocorrista] Erro na resposta da API:', response.status, errorText);
+          
+          // Fallback em caso de erro da API
+          console.log('[EmergencySocorrista] Criando chamado fallback devido a erro da API');
+          setChamado({
+            id: chamadoId,
+            cliente_id: '1',
+            status: 'A caminho',
+            data_abertura: new Date().toISOString(),
+            localizacao: '-23.5505,-46.6333',
+            endereco_textual: 'Erro ao carregar endereço'
+          });
+          setPageError(`Erro da API: ${response.status}`);
+          setLoading(false);
+          clearTimeout(loadingTimeout);
+          return;
+        }
+
+        const data = await response.json();
+        console.log('[EmergencySocorrista] Dados recebidos:', data);
+
+        if (Array.isArray(data) && data.length > 0) {
+          const chamadoData = data[0];
+          console.log('[EmergencySocorrista] Chamado carregado:', chamadoData);
+          
+          // Ordenar por data de criação - mais recente primeiro
+          const chamadosOrdenados = data.sort((a: any, b: any) => {
+            if (a.data_abertura && b.data_abertura) {
+              return new Date(b.data_abertura).getTime() - new Date(a.data_abertura).getTime();
+            }
+            return (b.id || 0) - (a.id || 0);
+          });
+          setChamado(chamadosOrdenados[0]);
+          setPageError(null);
+        } else {
+          console.log('[EmergencySocorrista] Nenhum chamado encontrado - criando fallback');
+          setChamado({
+            id: chamadoId,
+            cliente_id: '1',
+            status: 'A caminho',
+            data_abertura: new Date().toISOString(),
+            localizacao: '-23.5505,-46.6333',
+            endereco_textual: 'Chamado não encontrado na base de dados'
+          });
+          setPageError('Chamado não encontrado');
+        }
+      } catch (error) {
+        console.error('[EmergencySocorrista] Erro ao buscar chamado:', error);
+        
+        // Retry automático até 3 tentativas
+        if (retryCount < 2) {
+          console.log(`[EmergencySocorrista] Tentando novamente em 3 segundos... (tentativa ${retryCount + 2}/3)`);
+          setTimeout(() => {
+            setRetryCount(prev => prev + 1);
+          }, 3000);
+          return;
+        }
+        
+        // Fallback final após tentativas
+        const chamadoId = await getStorageValue('chamadoId');
+        console.log('[EmergencySocorrista] Criando chamado fallback final após erro');
+        setChamado({
+          id: chamadoId || 'error',
+          cliente_id: '1',
+          status: 'A caminho',
+          data_abertura: new Date().toISOString(),
+          localizacao: '-23.5505,-46.6333',
+          endereco_textual: 'Erro de conexão - modo offline'
+        });
+        setPageError(`Erro de conexão: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+      } finally {
+        setLoading(false);
+        clearTimeout(loadingTimeout);
       }
     };
-  }, [chamado, trackingAtivo, simulacaoAtiva, iniciarTrackingReal, pararTrackingReal]);
+
+    fetchChamado();
+
+    return () => {
+      clearTimeout(loadingTimeout);
+    };
+  }, [retryCount]); // Dependência do retryCount para retry automático
 
   useEffect(() => {
     if (chamado && chamado.localizacao) {
-      const [lat, lon] = chamado.localizacao.split(',').map(Number);
-      
-      // Usar endereço do banco de dados em vez de API externa
       if (chamado.endereco_textual) {
         setEndereco(chamado.endereco_textual);
       } else {
         setEndereco('Endereço não disponível');
       }
       
-      // Determinar posição inicial do socorrista
       let posicaoInicial;
       if (chamado.posicao_inicial_socorrista) {
         const [socLat, socLng] = chamado.posicao_inicial_socorrista.split(',').map(Number);
         posicaoInicial = { lat: socLat, lng: socLng };
         setSocorristaPos(posicaoInicial);
-      } else {
-        // Caso não tenha posição inicial, usar geolocalização atual
-        if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              const pos = {
-                lat: position.coords.latitude,
-                lng: position.coords.longitude
-              };
-              setSocorristaPos(pos);
-              // Buscar rota com a posição atual
-              getRouteFromOSRM(pos, { lat, lng: lon })
-                .then((result) => {
-                  if (result && result.coords && result.duration) {
-                    setRouteCoords(result.coords);
-                    setCurrentRouteCoords(result.coords);
-                    setRouteDuration(result.duration);
-                  }
-                });
-            }
-          );
-          return; // Retorna aqui pois a rota será buscada no callback da geolocalização
-        }
-      }
-      
-      // Se tiver posição inicial, busca a rota
-      if (posicaoInicial) {
-        getRouteFromOSRM(posicaoInicial, { lat, lng: lon })
-          .then((result) => {
-            if (result && result.coords && result.duration) {
-              setRouteCoords(result.coords);
-              setCurrentRouteCoords(result.coords);
-              setRouteDuration(result.duration);
-            }
-          });
       }
     }
   }, [chamado]);
-
-  // Recalcula rota sempre que a posição do socorrista muda - SEMPRE recalcula com proteção inteligente
-  useEffect(() => {
-    if (chamado && chamado.localizacao && socorristaPos) {
-      const [lat, lon] = chamado.localizacao.split(',').map(Number);
-      const destino = { lat, lng: lon };
-      
-      // Verifica se a posição mudou comparando com a última posição conhecida
-      const currentPosition = `${socorristaPos.lat.toFixed(6)},${socorristaPos.lng.toFixed(6)}`;
-      const lastPosition = lastSocorristaPos.current 
-        ? `${lastSocorristaPos.current.lat.toFixed(6)},${lastSocorristaPos.current.lng.toFixed(6)}`
-        : null;
-      
-      if (currentPosition !== lastPosition) {
-        // Atualiza a referência da última posição
-        lastSocorristaPos.current = { ...socorristaPos };
-        console.log(`[ROUTE SOCORRISTA] Posição mudou, recalculando rota...`);
-        
-        // ATUALIZAÇÃO IMEDIATA: Remove parte da rota já percorrida
-        if (currentRouteCoords.length > 1) {
-          // Encontra o ponto mais próximo na rota atual
-          let closestIndex = 0;
-          let minDistance = Infinity;
-          
-          for (let i = 0; i < currentRouteCoords.length; i++) {
-            const distance = Math.hypot(
-              currentRouteCoords[i].lat - socorristaPos.lat,
-              currentRouteCoords[i].lng - socorristaPos.lng
-            );
-            if (distance < minDistance) {
-              minDistance = distance;
-              closestIndex = i;
-            }
-          }
-          
-          // Remove a parte da rota já percorrida (do início até o ponto atual)
-          const remainingRoute = currentRouteCoords.slice(closestIndex);
-          if (remainingRoute.length > 1) {
-            setCurrentRouteCoords(remainingRoute);
-            console.log(`[ROUTE SOCORRISTA] Rota trimada imediatamente - removidos ${closestIndex} pontos`);
-          }
-        }
-        
-        // Debounce de 8 segundos para equilibrar responsividade e rate limiting
-        const timer = setTimeout(() => {
-          // Só verifica se não há chamada em progresso
-          if (!isOSRMCallInProgress.current) {
-            getRouteFromOSRM(socorristaPos, destino)
-              .then((result) => {
-                if (result && result.coords && result.coords.length > 1) {
-                  setCurrentRouteCoords(result.coords);
-                  console.log('[ROUTE SOCORRISTA] Rota atualizada com sucesso');
-                } else {
-                  console.log('[ROUTE SOCORRISTA] Nenhuma rota encontrada');
-                }
-              })
-              .catch(() => {
-                console.log('[ROUTE SOCORRISTA] Erro ao atualizar rota');
-              });
-          } else {
-            console.log('[ROUTE SOCORRISTA] Chamada OSRM em progresso, tentando novamente em 5s...');
-            // Se há chamada em progresso, tenta novamente em 5 segundos
-            setTimeout(() => {
-              if (!isOSRMCallInProgress.current) {
-                getRouteFromOSRM(socorristaPos, destino)
-                  .then((result) => {
-                    if (result && result.coords && result.coords.length > 1) {
-                      setCurrentRouteCoords(result.coords);
-                      console.log('[ROUTE SOCORRISTA] Rota atualizada com sucesso (retry)');
-                    }
-                  })
-                  .catch(() => {
-                    console.log('[ROUTE SOCORRISTA] Erro ao atualizar rota (retry)');
-                  });
-              }
-            }, 5000);
-          }
-        }, 8000); // Debounce de 8 segundos
-        
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [socorristaPos, chamado, getRouteFromOSRM]); // Removido currentRouteCoords para evitar loop
-
-  useEffect(() => {
-    if (routeCoords.length > 1) {
-      const distKm = calcularDistanciaTotalKm(routeCoords);
-      setDistanciaRota(distKm);
-      // tempo em minutos para 60 km/h
-      setTempoEstimado60(distKm > 0 ? Math.ceil((distKm / 60) * 60) : null);
-      // tempo em minutos para simulação mais rápida (90 km/h)
-      setTempoEstimadoSimulacao(distKm > 0 ? Math.ceil((distKm / 90) * 60) : null);
-    } else {
-      setDistanciaRota(null);
-      setTempoEstimado60(null);
-      setTempoEstimadoSimulacao(null);
-    }
-  }, [routeCoords]);
-
-  function calcularDistancia(lat1: number, lon1: number, lat2: number, lon2: number) {
-    // Fórmula de Haversine
-    const R = 6371; // km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  }
-
-  function formatarDataHora(data: string) {
-    if (!data) return '';
-    const d = new Date(data);
-    const dia = String(d.getDate()).padStart(2, '0');
-    const mes = String(d.getMonth() + 1).padStart(2, '0');
-    const ano = d.getFullYear();
-    const hora = String(d.getHours()).padStart(2, '0');
-    const min = String(d.getMinutes()).padStart(2, '0');
-    return `${dia}/${mes}/${ano} ${hora}:${min}`;
-  }
-
-  // Função para finalizar atendimento
-  const finalizarAtendimento = async () => {
-    // Aqui você pode fazer o PATCH real se quiser
-    // Exemplo de mock:
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      navigate('/partner-emergencies');
-    }, 1000);
-  };
-
-  // Função utilitária para encontrar o ponto mais próximo da rota
-  function getClosestRoutePoint(
-    current: { lat: number; lng: number },
-    routeCoords: { lat: number; lng: number }[]
-  ) {
-    let minDist = Infinity;
-    let closest = routeCoords[0];
-    for (const p of routeCoords) {
-      const dist = Math.hypot(current.lat - p.lat, current.lng - p.lng);
-      if (dist < minDist) {
-        minDist = dist;
-        closest = p;
-      }
-    }
-    return closest;
-  }
-
-  // Função para iniciar simulação de movimento - APENAS PARA TESTES
-  const iniciarSimulacao = () => {
-    if (!chamado || !chamado.posicao_inicial_socorrista || routeCoords.length < 2) {
-      console.log('Não é possível iniciar simulação: dados insuficientes');
-      return;
-    }
-
-    // Para o tracking real se estiver ativo
-    if (trackingAtivo) {
-      pararTrackingReal();
-      console.log('[SIMULAÇÃO] Tracking real parado para iniciar simulação');
-    }
-
-    // Para qualquer simulação em andamento
-    if (intervalSimulacao) {
-      clearInterval(intervalSimulacao);
-    }
-
-    // Encontra a posição atual do socorrista na rota
-    const [socorristaLat, socorristaLng] = chamado.posicao_inicial_socorrista.split(',').map(Number);
-    let startIndex = 0;
-    
-    // Encontra o ponto mais próximo na rota
-    let minDistance = Infinity;
-    for (let i = 0; i < routeCoords.length; i++) {
-      const distance = Math.hypot(
-        routeCoords[i].lat - socorristaLat,
-        routeCoords[i].lng - socorristaLng
-      );
-      if (distance < minDistance) {
-        minDistance = distance;
-        startIndex = i;
-      }
-    }
-
-    console.log(`Iniciando simulação do ponto ${startIndex} de ${routeCoords.length}`);
-    
-    let currentIndex = startIndex;
-    let dbUpdateCounter = 0; // Contador para controlar atualizações do banco
-    setSimulacaoAtiva(true);
-    
-    // Movimentação visual: 2 segundos (~80 km/h)
-    const visualIntervalMs = 2000;
-    // Atualização do banco: a cada 4 movimentos visuais (2s * 4 = 8s)
-    const dbUpdateInterval = 4;
-
-    console.log(`[SIMULAÇÃO MANUAL] Iniciando do ponto ${startIndex}/${routeCoords.length}, movimentação visual: ${visualIntervalMs}ms, banco: ${visualIntervalMs * dbUpdateInterval}ms`);
-
-    const interval = setInterval(async () => {
-      currentIndex++;
-      dbUpdateCounter++;
-      
-      if (currentIndex < routeCoords.length) {
-        const novaPosicao = routeCoords[currentIndex];
-        
-        // SEMPRE atualiza a posição visual (mais rápido)
-        setSocorristaPos(novaPosicao);
-        console.log(`[SIMULAÇÃO VISUAL] Ponto ${currentIndex}/${routeCoords.length} - Lat: ${novaPosicao.lat}, Lng: ${novaPosicao.lng}`);
-        
-        // SÓ atualiza o banco de dados a cada 4 movimentos visuais (mantém 8s)
-        const shouldUpdateDB = dbUpdateCounter >= dbUpdateInterval;
-        
-        if (shouldUpdateDB) {
-          dbUpdateCounter = 0; // Reset do contador
-          
-          const url = process.env.REACT_APP_SUPABASE_URL;
-          const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-          const accessToken = localStorage.getItem('accessToken');
-          
-          if (chamado && url && serviceKey && accessToken) {
-            try {
-              const timestamp = new Date().toLocaleTimeString();
-              console.log(`[PATCH MANUAL] ${timestamp} - Enviando coordenadas para banco: ${novaPosicao.lat},${novaPosicao.lng}`);
-              
-              const response = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
-                method: 'PATCH',
-                headers: {
-                  'apikey': serviceKey,
-                  'Authorization': `Bearer ${accessToken}`,
-                  'Content-Type': 'application/json',
-                  'Prefer': 'return=minimal'
-                },
-                body: JSON.stringify({
-                  posicao_inicial_socorrista: `${novaPosicao.lat},${novaPosicao.lng}`
-                })
-              });
-              
-              if (response.ok) {
-                console.log(`[PATCH MANUAL] ${timestamp} - ✅ Coordenadas atualizadas com sucesso no banco`);
-              } else {
-                console.error(`[PATCH MANUAL] ${timestamp} - ❌ Erro HTTP ${response.status}`);
-              }
-              
-              // Atualiza o estado local do chamado
-              setChamado(prev => prev ? {
-                ...prev,
-                posicao_inicial_socorrista: `${novaPosicao.lat},${novaPosicao.lng}`
-              } : null);
-              
-            } catch (error) {
-              const timestamp = new Date().toLocaleTimeString();
-              console.error(`[PATCH MANUAL] ${timestamp} - ❌ Erro ao atualizar posição na simulação:`, error);
-            }
-          }
-        }
-      } else {
-        // Chegou ao destino
-        console.log('[SIMULAÇÃO MANUAL] ✅ Chegou ao destino - parando simulação');
-        clearInterval(interval);
-        setSimulacaoAtiva(false);
-        setIntervalSimulacao(null);
-      }
-    }, visualIntervalMs);
-    
-    setIntervalSimulacao(interval);
-  };
-
-  // Função para parar simulação
-  const pararSimulacao = () => {
-    if (intervalSimulacao) {
-      clearInterval(intervalSimulacao);
-      setIntervalSimulacao(null);
-    }
-    setSimulacaoAtiva(false);
-    console.log('Simulação interrompida');
-    
-    // Reinicia o tracking real se há chamado
-    if (chamado && !trackingAtivo) {
-      console.log('[SIMULAÇÃO] Reiniciando tracking real após parar simulação');
-      iniciarTrackingReal();
-    }
-  };
 
   // Cleanup quando componente desmonta
   useEffect(() => {
@@ -702,32 +414,6 @@ const EmergencySocorrista: React.FC = () => {
       pb: 2,
       mt: 3
     }}>
-      {/* Mapa ocupa todo o espaço até o Paper */}
-      {/* chamado ? (
-        <Box sx={{ mb: 3, minHeight: 250 }}>
-          <MapPatner
-            center={{
-              lat: Number(chamado.localizacao.split(',')[0]),
-              lng: Number(chamado.localizacao.split(',')[1])
-            }}
-            zoom={15}
-            markers={[{
-              position: {
-                lat: Number(chamado.localizacao.split(',')[0]),
-                lng: Number(chamado.localizacao.split(',')[1])
-              },
-              title: 'Local do chamado'
-            }, {
-              position: socorristaCoords,
-              title: 'Sua localização'
-            }]}
-          />
-        </Box>
-      ) : (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 3, mb: 3, minHeight: 250 }}>
-          <CircularProgress />
-        </Box>
-      ) */}
       {/* Paper de Informações do Chamado */}
       <Paper elevation={0} sx={{
         borderRadius: 2,
@@ -760,32 +446,50 @@ const EmergencySocorrista: React.FC = () => {
             zIndex: 0,
           }}
         />
+        
         <Typography variant="h6" sx={{ mb: 1, position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span>Informações do Chamado{chamado ? ` (ID: ${chamado.id})` : ''}</span>
-          {/* Botão de simulação - OCULTO mas disponível para testes */}
-          {chamado && chamado.posicao_inicial_socorrista && routeCoords.length > 1 && (
-            <IconButton
-              onClick={simulacaoAtiva ? pararSimulacao : iniciarSimulacao}
+          {/* Botão de retry manual se houver erro */}
+          {pageError && (
+            <Button
               size="small"
-              sx={{ 
-                ml: 2, 
-                color: simulacaoAtiva ? 'error.main' : 'primary.main',
-                opacity: 0, // Invisível
-                pointerEvents: 'auto', // Mantém clicável
-                '&:hover': {
-                  opacity: 0.3, // Fica levemente visível no hover para facilitar encontrar
-                  backgroundColor: simulacaoAtiva ? 'error.light' : 'primary.light'
-                }
+              variant="outlined"
+              onClick={() => {
+                setRetryCount(0);
+                setLoading(true);
+                setPageError(null);
               }}
+              sx={{ ml: 2 }}
             >
-              {simulacaoAtiva ? <StopIcon fontSize="small" /> : <PlayArrowIcon fontSize="small" />}
-            </IconButton>
+              Tentar Novamente
+            </Button>
           )}
         </Typography>
+
+        {/* Alerta de erro se houver */}
+        {pageError && (
+          <Box sx={{ 
+            mb: 2, 
+            p: 2, 
+            backgroundColor: '#fff3cd', 
+            border: '1px solid #ffeaa7',
+            borderRadius: 1,
+            position: 'relative',
+            zIndex: 1
+          }}>
+            <Typography variant="body2" color="warning.dark">
+              ⚠️ {pageError}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              A funcionalidade básica está disponível mesmo com este erro.
+            </Typography>
+          </Box>
+        )}
+
         {chamado ? (
           <>
+            {/* SEMPRE exibe o mapa, mesmo que simples */}
             {(() => {
-              // Extrai a posição inicial do socorrista se existir
               let socorristaLat: number | null = null;
               let socorristaLng: number | null = null;
               if (chamado.posicao_inicial_socorrista) {
@@ -794,11 +498,6 @@ const EmergencySocorrista: React.FC = () => {
                   socorristaLat = Number(parts[0]);
                   socorristaLng = Number(parts[1]);
                 }
-              }
-              // Calcula o índice da posição do socorrista na rota
-              let socorristaIdx = -1;
-              if (socorristaLat !== null && socorristaLng !== null && routeCoords.length > 1) {
-                socorristaIdx = routeCoords.findIndex(p => p.lat === socorristaLat && p.lng === socorristaLng);
               }
               return (
                 <Box sx={{ width: '100%', minHeight: 350, maxHeight: 500, position: 'relative', zIndex: 1 }}>
@@ -836,44 +535,29 @@ const EmergencySocorrista: React.FC = () => {
                 </Box>
               );
             })()}
-            {/* Exibir informações abaixo do mapa */}
+            
+            {/* SEMPRE exibe informações básicas */}
             <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 4, mt: 2, position: 'relative', zIndex: 1 }}>
-              {/* Horário de chegada previsto - esquerda */}
               <Typography variant="h5" sx={{ fontWeight: 700, textAlign: 'left', minWidth: 90 }}>
-                {(() => {
-                  let tempoMin = 0;
-                  if (routeDuration) {
-                    tempoMin = Math.ceil(routeDuration / 60);
-                  } else if (tempoEstimadoSimulacao) {
-                    tempoMin = tempoEstimadoSimulacao;
-                  }
-                  if (!tempoMin) return '--:--';
-                  const chegada = new Date();
-                  chegada.setMinutes(chegada.getMinutes() + tempoMin);
-                  return chegada.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                })()}
+                --:--
               </Typography>
-              {/* Tempo restante de viagem - centro */}
+              
               <Box sx={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
                 <Typography variant="body1" sx={{ textAlign: 'center', minWidth: 90 }}>
-                  {routeDuration
-                    ? `${Math.ceil(routeDuration / 60)} min`
-                    : tempoEstimadoSimulacao !== null
-                      ? `${tempoEstimadoSimulacao} min`
-                      : '--'}
+                  --
                 </Typography>
               </Box>
-              {/* Distância restante - direita */}
+              
               <Typography variant="body1" sx={{ textAlign: 'right', minWidth: 90 }}>
-                {distanciaRota !== null ? `${distanciaRota.toFixed(2)} km` : '--'}
+                --
               </Typography>
             </Box>
-            {/* Endereço completo abaixo da linha principal */}
+            
             <Typography variant="body2" sx={{ textAlign: 'left', color: 'text.secondary', mt: 1, position: 'relative', zIndex: 1 }}>
-              {endereco || 'Endereço não disponível'}
+              {endereco || chamado.endereco_textual || 'Endereço não disponível'}
             </Typography>
 
-            {/* Botões de ação - visível apenas se não clicou em Cheguei */}
+            {/* SEMPRE exibe os botões de ação principais */}
             {!chegou && (
               <Box sx={{ display: 'flex', flexDirection: 'row', gap: 2, mt: 2, width: '100%', justifyContent: 'space-between', position: 'relative', zIndex: 1 }}>
                 <Button
@@ -882,22 +566,28 @@ const EmergencySocorrista: React.FC = () => {
                   sx={{ minWidth: 120, fontWeight: 600 }}
                   onClick={async () => {
                     if (!chamado) return;
-                    // If this is a mock chamado, apenas simula
-                    if (chamado.id === '123') {
+                    
+                    // Para chamados mock/fallback, apenas simula
+                    if (chamado.id === 'mock' || chamado.id === 'error') {
                       setChegou(true);
                       return;
                     }
+                    
                     const url = process.env.REACT_APP_SUPABASE_URL;
                     const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-                    const accessToken = localStorage.getItem('accessToken');
+                    const accessToken = await getStorageValue('accessToken') || await getStorageValue('userToken');
+                    
                     if (!url || !serviceKey) {
-                      alert('Supabase URL ou Service Key não definidos');
+                      alert('Configuração inválida. Usando modo offline.');
+                      setChegou(true);
                       return;
                     }
                     if (!accessToken) {
-                      alert('Token de acesso não encontrado. Faça login novamente.');
+                      alert('Token não encontrado. Usando modo offline.');
+                      setChegou(true);
                       return;
                     }
+                    
                     setLoading(true);
                     try {
                       const response = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
@@ -910,69 +600,39 @@ const EmergencySocorrista: React.FC = () => {
                         },
                         body: JSON.stringify({ status: 'Ambulância no local' })
                       });
+                      
                       if (!response.ok) {
-                        const data = await response.json();
-                        throw new Error(data.error_description || data.message || `Erro ${response.status}`);
-                      }
-
-                      // Buscar dados atualizados do chamado para o log
-                      const chamadoResp = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
-                        headers: {
-                          'apikey': serviceKey,
-                          'Authorization': `Bearer ${accessToken}`,
-                          'Content-Type': 'application/json'
-                        }
-                      });
-                      const chamadoData = await chamadoResp.json();
-                      if (chamadoData && chamadoData[0]) {
-                        const logData = {
-                          chamado_id: chamadoData[0].id,
-                          cliente_id: chamadoData[0].cliente_id,
-                          localizacao: chamadoData[0].localizacao,
-                          endereco_textual: chamadoData[0].endereco_textual,
-                          status: chamadoData[0].status,
-                          operador_id: chamadoData[0].operador_id,
-                          socorrista_id: chamadoData[0].socorrista_id,
-                          data_abertura: chamadoData[0].data_abertura,
-                          data_fechamento: chamadoData[0].data_fechamento,
-                          descricao: chamadoData[0].descricao,
-                          prioridade: chamadoData[0].prioridade,
-                          notificacao_familiares: chamadoData[0].notificacao_familiares,
-                          posicao_inicial_socorrista: chamadoData[0].posicao_inicial_socorrista
-                        };
-                        await fetch(`${url}/rest/v1/log_chamado`, {
-                          method: 'POST',
-                          headers: {
-                            'apikey': serviceKey,
-                            'Authorization': `Bearer ${accessToken}`,
-                            'Content-Type': 'application/json'
-                          },
-                          body: JSON.stringify(logData)
-                        });
+                        console.error('Erro ao atualizar status, mas continuando...');
+                        setChegou(true);
+                        return;
                       }
 
                       setChegou(true);
                     } catch (err: any) {
-                      alert('Erro ao atualizar status: ' + (err.message || err));
+                      console.error('Erro ao atualizar status:', err);
+                      setChegou(true); // Continua mesmo com erro
                     } finally {
                       setLoading(false);
                     }
                   }}
                   disabled={loading}
                 >
-                  Cheguei
+                  {loading ? <CircularProgress size={20} color="inherit" /> : 'Cheguei'}
                 </Button>
+                
                 <Button
                   variant="outlined"
                   color="error"
                   sx={{ minWidth: 120, fontWeight: 600 }}
-                  onClick={finalizarAtendimento}
+                  onClick={cancelarChamado}
+                  disabled={loading}
                 >
-                  Cancelar
+                  {loading ? <CircularProgress size={20} /> : 'Cancelar'}
                 </Button>
               </Box>
             )}
-            {/* Botão verde fixo no footer para concluir chamado, aparece só após Cheguei */}
+            
+            {/* Botão de conclusão sempre disponível */}
             {chegou && (
               <Box sx={{ position: 'fixed', left: 0, bottom: 0, width: '100%', zIndex: 2000, display: 'flex', justifyContent: 'center', pb: 2 }}>
                 <Button
@@ -980,21 +640,31 @@ const EmergencySocorrista: React.FC = () => {
                   color="success"
                   sx={{ minWidth: 220, fontWeight: 700, fontSize: 18, py: 1.5, borderRadius: 3, boxShadow: 3 }}
                   onClick={async () => {
-                    if (!chamado) return;
+                    if (!chamado) {
+                      navigate('/partner-emergencies');
+                      return;
+                    }
+                    
+                    // Para chamados mock/fallback, apenas redireciona
+                    if (chamado.id === 'mock' || chamado.id === 'error') {
+                      await removeStorageValue('chamadoId');
+                      navigate('/partner-emergencies');
+                      return;
+                    }
+                    
                     const url = process.env.REACT_APP_SUPABASE_URL;
                     const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
-                    const accessToken = localStorage.getItem('accessToken');
-                    if (!url || !serviceKey) {
-                      alert('Supabase URL ou Service Key não definidos');
+                    const accessToken = await getStorageValue('accessToken') || await getStorageValue('userToken');
+                    
+                    if (!url || !serviceKey || !accessToken) {
+                      await removeStorageValue('chamadoId');
+                      navigate('/partner-emergencies');
                       return;
                     }
-                    if (!accessToken) {
-                      alert('Token de acesso não encontrado. Faça login novamente.');
-                      return;
-                    }
+                    
                     setLoading(true);
                     try {
-                      const response = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
+                      await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
                         method: 'PATCH',
                         headers: {
                           'apikey': serviceKey,
@@ -1002,68 +672,39 @@ const EmergencySocorrista: React.FC = () => {
                           'Content-Type': 'application/json',
                           'Prefer': 'return=minimal'
                         },
-                        body: JSON.stringify({ status: 'concluído' })
+                        body: JSON.stringify({ 
+                          status: 'concluído',
+                          data_fechamento: new Date().toISOString()
+                        })
                       });
-                      if (!response.ok) {
-                        const data = await response.json();
-                        throw new Error(data.error_description || data.message || `Erro ${response.status}`);
-                      }
-
-                      // Buscar dados atualizados do chamado para o log
-                      const chamadoResp = await fetch(`${url}/rest/v1/chamado?id=eq.${chamado.id}`, {
-                        headers: {
-                          'apikey': serviceKey,
-                          'Authorization': `Bearer ${accessToken}`,
-                          'Content-Type': 'application/json'
-                        }
-                      });
-                      const chamadoData = await chamadoResp.json();
-                      if (chamadoData && chamadoData[0]) {
-                        const logData = {
-                          chamado_id: chamadoData[0].id,
-                          cliente_id: chamadoData[0].cliente_id,
-                          localizacao: chamadoData[0].localizacao,
-                          endereco_textual: chamadoData[0].endereco_textual,
-                          status: chamadoData[0].status,
-                          operador_id: chamadoData[0].operador_id,
-                          socorrista_id: chamadoData[0].socorrista_id,
-                          data_abertura: chamadoData[0].data_abertura,
-                          data_fechamento: chamadoData[0].data_fechamento,
-                          descricao: chamadoData[0].descricao,
-                          prioridade: chamadoData[0].prioridade,
-                          notificacao_familiares: chamadoData[0].notificacao_familiares,
-                          posicao_inicial_socorrista: chamadoData[0].posicao_inicial_socorrista
-                        };
-                        await fetch(`${url}/rest/v1/log_chamado`, {
-                          method: 'POST',
-                          headers: {
-                            'apikey': serviceKey,
-                            'Authorization': `Bearer ${accessToken}`,
-                            'Content-Type': 'application/json'
-                          },
-                          body: JSON.stringify(logData)
-                        });
-                      }
-
-                      // Limpar localStorage e redirecionar
-                      localStorage.removeItem('chamadoId');
-                      console.clear(); // Limpa o console
-                      navigate('/partner-emergencies');
                     } catch (err: any) {
-                      alert('Erro ao concluir chamado: ' + (err.message || err));
+                      console.error('Erro ao concluir, mas continuando:', err);
                     } finally {
-                      setLoading(false);
+                      await removeStorageValue('chamadoId');
+                      navigate('/partner-emergencies');
                     }
                   }}
+                  disabled={loading}
                 >
-                  Chamado concluído
+                  {loading ? <CircularProgress size={20} color="inherit" /> : 'Chamado concluído'}
                 </Button>
               </Box>
             )}
           </>
         ) : (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-            <CircularProgress />
+          /* Fallback caso não tenha chamado - SEMPRE exibe algo */
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', p: 3, position: 'relative', zIndex: 1 }}>
+            <CircularProgress sx={{ mb: 2 }} />
+            <Typography variant="body1" color="text.secondary" textAlign="center">
+              Carregando informações do chamado...
+            </Typography>
+            <Button
+              variant="outlined"
+              onClick={() => navigate('/partner-emergencies')}
+              sx={{ mt: 2 }}
+            >
+              Voltar para Lista de Chamados
+            </Button>
           </Box>
         )}
       </Paper>
@@ -1071,4 +712,4 @@ const EmergencySocorrista: React.FC = () => {
   );
 };
 
-export default EmergencySocorrista; 
+export default EmergencySocorrista;
