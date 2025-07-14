@@ -49,25 +49,6 @@ const Home: React.FC = () => {
   const [buscaAutomatica, setBuscaAutomatica] = useState<boolean>(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Estados para debug no frontend
-  const [debugInfo, setDebugInfo] = useState<{
-    clienteId: string | null;
-    apiUrl: string;
-    apiResponse: any;
-    apiError: string | null;
-    supabaseUrl: string | null;
-    serviceKey: string | null;
-    lastCheck: string;
-  }>({
-    clienteId: null,
-    apiUrl: '',
-    apiResponse: null,
-    apiError: null,
-    supabaseUrl: null,
-    serviceKey: null,
-    lastCheck: ''
-  });
-
   const navigate = useNavigate();
 
   // Configurações de precisão
@@ -192,8 +173,6 @@ const Home: React.FC = () => {
 
   useEffect(() => {
     const verificarChamadoAberto = async () => {
-      const timestamp = new Date().toLocaleString('pt-BR');
-      
       try {
         console.log(`[Home] Plataforma: ${Capacitor.isNativePlatform() ? 'Mobile Nativo' : 'Web'}`);
         
@@ -201,56 +180,39 @@ const Home: React.FC = () => {
         const clienteId = await getStorageValue('clienteId');
         console.log('[Home] ClienteId obtido:', clienteId);
         
+        if (!clienteId) {
+          console.log('[Home] Nenhum clienteId encontrado - parando verificação');
+          return;
+        }
+
         // Obter variáveis de ambiente
         const url = process.env.REACT_APP_SUPABASE_URL;
         const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
         
-        // Atualizar debug info
-        setDebugInfo(prev => ({
-          ...prev,
-          clienteId,
-          supabaseUrl: url || null,
-          serviceKey: serviceKey ? 'Configurado' : null,
-          lastCheck: timestamp,
-          apiError: null
-        }));
-        
-        if (!clienteId) {
-          console.log('[Home] Nenhum clienteId encontrado');
-          setDebugInfo(prev => ({
-            ...prev,
-            apiError: 'ClienteId não encontrado no storage',
-            apiResponse: null
-          }));
-          return;
-        }
-        
         if (!url || !serviceKey) {
           console.error('[Home] Variáveis de ambiente não configuradas:', { url: !!url, serviceKey: !!serviceKey });
-          setDebugInfo(prev => ({
-            ...prev,
-            apiError: 'Variáveis de ambiente não configuradas',
-            apiResponse: null
-          }));
           return;
         }
 
-        // Buscar apenas chamados com status 'Pendente' ou 'Aceito / Em andamento' e criados hoje
+        // Construir data de hoje
         const today = new Date();
         const yyyy = today.getFullYear();
         const mm = String(today.getMonth() + 1).padStart(2, '0');
         const dd = String(today.getDate()).padStart(2, '0');
         const todayStr = `${yyyy}-${mm}-${dd}`;
         
+        console.log('[Home] Data de hoje para filtro:', todayStr);
+        
+        // Construir endpoint
         const endpoint = `${url}/rest/v1/chamado?cliente_id=eq.${clienteId}&status=in.(Pendente,"Aceito / Em andamento")&data_abertura=gte.${todayStr}T00:00:00&data_abertura=lte.${todayStr}T23:59:59&order=data_abertura.desc&limit=1`;
         
-        console.log('[Home] Fazendo GET chamado:', endpoint);
-        
-        // Atualizar URL da API no debug
-        setDebugInfo(prev => ({
-          ...prev,
-          apiUrl: endpoint
-        }));
+        console.log('[Home] ===== DETALHES DA CHAMADA API =====');
+        console.log('[Home] URL Base:', url);
+        console.log('[Home] Cliente ID usado:', clienteId);
+        console.log('[Home] Status buscados: Pendente, "Aceito / Em andamento"');
+        console.log('[Home] Data filtro:', todayStr);
+        console.log('[Home] Endpoint completo:', endpoint);
+        console.log('[Home] ======================================');
         
         const response = await fetch(endpoint, {
           headers: {
@@ -260,63 +222,81 @@ const Home: React.FC = () => {
           },
         });
 
+        console.log('[Home] Status da resposta:', response.status);
+
         if (!response.ok) {
           const errorText = await response.text();
           console.error('[Home] Erro na resposta da API:', response.status, errorText);
-          setDebugInfo(prev => ({
-            ...prev,
-            apiError: `HTTP ${response.status}: ${errorText}`,
-            apiResponse: null
-          }));
           return;
         }
 
         const data = await response.json();
-        console.log('[Home] Resposta GET chamado:', data);
+        console.log('[Home] ===== RESPOSTA DA API =====');
+        console.log('[Home] Dados recebidos:', data);
+        console.log('[Home] Tipo da resposta:', Array.isArray(data) ? 'Array' : typeof data);
+        console.log('[Home] Quantidade de chamados:', Array.isArray(data) ? data.length : 'N/A');
         
-        // Atualizar resposta da API no debug
-        setDebugInfo(prev => ({
-          ...prev,
-          apiResponse: data,
-          apiError: null
-        }));
+        if (Array.isArray(data) && data.length > 0) {
+          data.forEach((chamado, index) => {
+            console.log(`[Home] Chamado ${index + 1}:`, {
+              id: chamado.id,
+              status: chamado.status,
+              cliente_id: chamado.cliente_id,
+              data_abertura: chamado.data_abertura
+            });
+          });
+        }
+        console.log('[Home] ===============================');
         
-        if (data && data.length > 0) {
+        if (data && Array.isArray(data) && data.length > 0) {
           const chamado = data[0];
+          console.log('[Home] ===== ANÁLISE DO CHAMADO =====');
           console.log('[Home] Chamado encontrado:', chamado);
+          console.log('[Home] ID do chamado:', chamado.id);
+          console.log('[Home] Status atual:', chamado.status);
+          console.log('[Home] Cliente ID do chamado:', chamado.cliente_id);
+          console.log('[Home] Data de abertura:', chamado.data_abertura);
           
-          // Salva chamadoId e clienteId no storage correto
-          await setStorageValue('chamadoId', chamado.id.toString());
-          await setStorageValue('clienteId', chamado.cliente_id.toString());
+          // Verificar se deve redirecionar
+          const statusQueRedirecionam = ['Pendente', 'Aceito / Em andamento'];
+          const statusAtual = chamado.status;
+          const deveRedirecionar = statusQueRedirecionam.includes(statusAtual);
           
-          // Limpa todos os cronômetros antigos do storage
-          const allKeys = await getAllStorageKeys();
-          const cronometroKeys = allKeys.filter(key => key.startsWith('cronometro_start_time_'));
+          console.log('[Home] Status que redirecionam:', statusQueRedirecionam);
+          console.log('[Home] Status atual do chamado:', statusAtual);
+          console.log('[Home] Deve redirecionar?', deveRedirecionar);
+          console.log('[Home] ================================');
           
-          for (const key of cronometroKeys) {
-            await removeStorageValue(key);
-          }
-          
-          console.log('[Home] Cronômetros limpos:', cronometroKeys);
-          
-          // Verifica se deve redirecionar
-          if (chamado.status !== 'finalizado' && chamado.status !== 'concluído') {
-            console.log('[Home] Redirecionando para emergency, status:', chamado.status);
+          if (deveRedirecionar) {
+            console.log('[Home] ⚠️ REDIRECIONAMENTO SERÁ EXECUTADO!');
+            console.log('[Home] Salvando chamadoId no storage...');
+            
+            // Salva chamadoId e clienteId no storage correto
+            await setStorageValue('chamadoId', chamado.id.toString());
+            await setStorageValue('clienteId', chamado.cliente_id.toString());
+            
+            // Limpa todos os cronômetros antigos do storage
+            const allKeys = await getAllStorageKeys();
+            const cronometroKeys = allKeys.filter(key => key.startsWith('cronometro_start_time_'));
+            
+            for (const key of cronometroKeys) {
+              await removeStorageValue(key);
+            }
+            
+            console.log('[Home] Cronômetros limpos:', cronometroKeys);
+            console.log('[Home] Executando navigate para /emergency...');
+            
             navigate('/emergency');
           } else {
-            console.log('[Home] Chamado já finalizado, não redirecionando');
+            console.log('[Home] ✅ Chamado encontrado mas não requer redirecionamento');
+            console.log('[Home] Status não requer ação:', statusAtual);
           }
         } else {
-          console.log('[Home] Nenhum chamado ativo encontrado');
+          console.log('[Home] ✅ Nenhum chamado ativo encontrado - tudo normal');
         }
         
       } catch (error) {
-        console.error('[Home] Erro ao buscar chamado:', error);
-        setDebugInfo(prev => ({
-          ...prev,
-          apiError: `Erro de rede: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
-          apiResponse: null
-        }));
+        console.error('[Home] ❌ Erro ao buscar chamado:', error);
         
         if (error instanceof Response) {
           try {
@@ -456,151 +436,6 @@ const Home: React.FC = () => {
               </Button>
             )}
           </Box>
-        </Box>
-      </Box>
-
-      {/* Debug info no frontend - SEMPRE VISÍVEL */}
-      <Box sx={{ 
-        mt: 3, 
-        p: 2, 
-        backgroundColor: '#fff3cd', 
-        border: '2px solid #ff6b6b',
-        borderRadius: 2,
-        position: 'relative',
-        zIndex: 2,
-        width: '100%',
-        maxWidth: '100%'
-      }}>
-        <Typography variant="h5" gutterBottom sx={{ color: '#d63384', fontWeight: 'bold', textAlign: 'center' }}>
-          🔍 DEBUG API - MOBILE
-        </Typography>
-        
-        <Box sx={{ mb: 2, p: 1, backgroundColor: '#e7f3ff', borderRadius: 1 }}>
-          <Typography variant="h6" sx={{ color: '#0066cc', fontWeight: 'bold' }}>
-            📱 PLATAFORMA: {Capacitor.isNativePlatform() ? 'MOBILE NATIVO' : 'WEB'}
-          </Typography>
-          <Typography variant="body1" sx={{ fontSize: '14px' }}>
-            ⏰ Última verificação: {debugInfo.lastCheck || 'Nunca'}
-          </Typography>
-        </Box>
-
-        <Box sx={{ mb: 2, p: 1, backgroundColor: debugInfo.clienteId ? '#d4edda' : '#f8d7da', borderRadius: 1 }}>
-          <Typography variant="h6" sx={{ fontWeight: 'bold', color: debugInfo.clienteId ? '#155724' : '#721c24' }}>
-            🆔 CLIENTE ID:
-          </Typography>
-          <Typography 
-            variant="h6" 
-            sx={{ 
-              color: debugInfo.clienteId ? '#155724' : '#721c24',
-              fontFamily: 'monospace',
-              backgroundColor: '#fff',
-              p: 1,
-              borderRadius: 1,
-              border: '2px solid',
-              borderColor: debugInfo.clienteId ? '#28a745' : '#dc3545',
-              fontSize: '16px',
-              fontWeight: 'bold'
-            }}
-          >
-            {debugInfo.clienteId || '❌ NÃO ENCONTRADO'}
-          </Typography>
-        </Box>
-
-        <Box sx={{ mb: 2, p: 1, backgroundColor: '#e2e3e5', borderRadius: 1 }}>
-          <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#383d41' }}>
-            ⚙️ CONFIGURAÇÃO:
-          </Typography>
-          <Typography variant="body1" sx={{ fontSize: '14px' }}>
-            📡 Supabase URL: {debugInfo.supabaseUrl ? '✅ OK' : '❌ ERRO'}
-          </Typography>
-          <Typography variant="body1" sx={{ fontSize: '14px' }}>
-            🔑 Service Key: {debugInfo.serviceKey ? '✅ OK' : '❌ ERRO'}
-          </Typography>
-        </Box>
-
-        {debugInfo.apiUrl && (
-          <Box sx={{ mb: 2, p: 1, backgroundColor: '#fff3cd', borderRadius: 1 }}>
-            <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#856404' }}>
-              🌐 URL DA API:
-            </Typography>
-            <Typography 
-              variant="body2" 
-              sx={{ 
-                fontFamily: 'monospace',
-                backgroundColor: '#fff',
-                p: 1,
-                borderRadius: 1,
-                border: '1px solid #ffeaa7',
-                fontSize: '11px',
-                wordBreak: 'break-all',
-                lineHeight: 1.2
-              }}
-            >
-              {debugInfo.apiUrl}
-            </Typography>
-          </Box>
-        )}
-
-        {debugInfo.apiError && (
-          <Box sx={{ mb: 2, p: 1, backgroundColor: '#f8d7da', borderRadius: 1 }}>
-            <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#721c24' }}>
-              ❌ ERRO DA API:
-            </Typography>
-            <Typography 
-              variant="body1" 
-              sx={{ 
-                color: '#721c24',
-                backgroundColor: '#fff',
-                p: 1,
-                borderRadius: 1,
-                border: '2px solid #dc3545',
-                fontSize: '14px'
-              }}
-            >
-              {debugInfo.apiError}
-            </Typography>
-          </Box>
-        )}
-
-        {debugInfo.apiResponse !== null && (
-          <Box sx={{ mb: 2, p: 1, backgroundColor: '#d1ecf1', borderRadius: 1 }}>
-            <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#0c5460' }}>
-              📊 RESPOSTA ({Array.isArray(debugInfo.apiResponse) ? debugInfo.apiResponse.length : 0} chamados):
-            </Typography>
-            <Typography 
-              variant="body2" 
-              sx={{ 
-                fontFamily: 'monospace',
-                backgroundColor: '#fff',
-                p: 1,
-                borderRadius: 1,
-                border: '1px solid #bee5eb',
-                fontSize: '10px',
-                maxHeight: '150px',
-                overflow: 'auto',
-                lineHeight: 1.2
-              }}
-            >
-              {JSON.stringify(debugInfo.apiResponse, null, 2)}
-            </Typography>
-          </Box>
-        )}
-
-        <Box sx={{ textAlign: 'center', mt: 2 }}>
-          <Button 
-            variant="contained" 
-            color="primary"
-            size="large"
-            onClick={() => window.location.reload()}
-            sx={{ 
-              fontSize: '16px',
-              fontWeight: 'bold',
-              py: 1.5,
-              px: 4
-            }}
-          >
-            🔄 RECARREGAR
-          </Button>
         </Box>
       </Box>
     </Container>
