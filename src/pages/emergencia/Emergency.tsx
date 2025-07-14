@@ -429,8 +429,29 @@ const Emergency: React.FC = () => {
      // Adicionar lógica real de notificação aqui
   };
 
-  const finishEmergency = () => {
+  const finishEmergency = async () => {
+    if (!chamado?.id) return;
+    setLoading(true);
     try {
+      const url = process.env.REACT_APP_SUPABASE_URL;
+      const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+      if (!url || !serviceKey) throw new Error('Supabase URL ou Service Key não definidos');
+      const response = await fetch(
+        `${url}/rest/v1/chamado?id=eq.${chamado.id}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'apikey': serviceKey,
+            'Authorization': `Bearer ${serviceKey}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation'
+          },
+          body: JSON.stringify({ status: 'finalizado' })
+        }
+      );
+      if (!response.ok) throw new Error('Erro ao atualizar status do chamado');
+      // Remover cronômetro do chamado finalizado
+      localStorage.removeItem(`cronometro_start_time_${chamado.id}_last`);
       setNotification({
         open: true,
         message: 'Emergência finalizada com sucesso!',
@@ -445,6 +466,8 @@ const Emergency: React.FC = () => {
         message: 'Erro ao finalizar emergência.',
         severity: 'error'
       });
+    } finally {
+      setLoading(false);
     }
   };
 

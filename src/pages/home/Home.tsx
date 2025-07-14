@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Box, Typography, Button, Container } from '@mui/material';
 import {
   Person as ProfileIcon,
@@ -46,6 +46,8 @@ const Home: React.FC = () => {
   const [obtendoLocalizacao, setObtendoLocalizacao] = useState<boolean>(false);
   const [buscaAutomatica, setBuscaAutomatica] = useState<boolean>(true);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const navigate = useNavigate();
 
   // Configurações de precisão
   const PRECISAO_DESEJADA = 20; // metros
@@ -128,6 +130,65 @@ const Home: React.FC = () => {
       setObtendoLocalizacao(false);
     }
   };
+
+  useEffect(() => {
+    const verificarChamadoAberto = async () => {
+      const clienteId = localStorage.getItem('clienteId');
+      if (!clienteId) return;
+
+      try {
+        const url = process.env.REACT_APP_SUPABASE_URL;
+        const serviceKey = process.env.REACT_APP_SUPABASE_SERVICE_KEY;
+        if (!url || !serviceKey) return;
+
+        // Buscar apenas chamados com status 'Pendente' ou 'Aceito / Em andamento' e criados hoje
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        const todayStr = `${yyyy}-${mm}-${dd}`;
+        const endpoint = `${url}/rest/v1/chamado?cliente_id=eq.${clienteId}&status=in.(Pendente,"Aceito / Em andamento")&data_abertura=gte.${todayStr}T00:00:00&data_abertura=lte.${todayStr}T23:59:59&order=data_abertura.desc&limit=1`;
+        console.log('[Home] Fazendo GET chamado:', endpoint);
+        const response = await fetch(
+          endpoint,
+          {
+            headers: {
+              'apikey': serviceKey,
+              'Authorization': `Bearer ${serviceKey}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        const data = await response.json();
+        console.log('[Home] Resposta GET chamado:', data);
+        if (data && data.length > 0) {
+          const chamado = data[0];
+          // Salva chamadoId e clienteId no localStorage antes do redirecionamento
+          localStorage.setItem('chamadoId', chamado.id.toString());
+          localStorage.setItem('clienteId', chamado.cliente_id.toString());
+          // Limpa todos os cronômetros antigos do localStorage
+          Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('cronometro_start_time_')) {
+              localStorage.removeItem(key);
+            }
+          });
+          // Ajuste os status conforme sua base
+          if (chamado.status !== 'finalizado' && chamado.status !== 'concluído') {
+            navigate('/emergency');
+          }
+        }
+      } catch (error) {
+        console.error('[Home] Erro ao buscar chamado:', error);
+        if (error instanceof Response) {
+          error.text().then(text => {
+            console.error('[Home] Erro resposta do fetch:', text);
+          });
+        }
+      }
+    };
+
+    verificarChamadoAberto();
+  }, [navigate]);
 
   // Inicia/para o intervalo de busca automática
   useEffect(() => {

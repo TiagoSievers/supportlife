@@ -309,7 +309,7 @@ const ChamadoModalClient: React.FC<ChamadoModalProps> = ({ open, onClose }) => {
       // Armazenar o ID do chamado no localStorage
       if (chamadoId) {
         localStorage.setItem('chamadoId', chamadoId.toString());
-        
+        localStorage.setItem('clienteId', chamado.cliente_id.toString());
         // Criar log_chamado
         const logData = {
           chamado_id: chamadoId,

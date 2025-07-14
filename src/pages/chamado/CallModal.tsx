@@ -352,7 +352,15 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
           onClick={handleAceitar}
           color="success"
           variant="contained"
-          disabled={loading || !chamadoId || status === 'Aceito / Em andamento'}
+          disabled={
+            loading ||
+            !chamadoId ||
+            status === 'Aceito / Em andamento' ||
+            status === 'A caminho' ||
+            status === 'finalizado' ||
+            status === 'Ambulância no local' ||
+            status === 'concluído'
+          }
           sx={{ mt: 2 }}
           fullWidth
         >
@@ -433,7 +441,16 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
           }}
           color="info"
           variant="contained"
-          disabled={loading || !chamadoId || status === 'Em análise' || status === 'Aceito / Em andamento'}
+          disabled={
+            loading ||
+            !chamadoId ||
+            status === 'Em análise' ||
+            status === 'Aceito / Em andamento' ||
+            status === 'A caminho' ||
+            status === 'finalizado' ||
+            status === 'Ambulância no local' ||
+            status === 'concluído'
+          }
           sx={{ mt: 2 }}
           fullWidth
         >
@@ -514,7 +531,14 @@ const CallModal: React.FC<CallModalProps> = ({ open, chamadoId, onClose, nome, e
           }}
           color="error"
           variant="contained"
-          disabled={loading || !chamadoId}
+          disabled={
+            loading ||
+            !chamadoId ||
+            status === 'A caminho' ||
+            status === 'finalizado' ||
+            status === 'Ambulância no local' ||
+            status === 'concluído'
+          }
           sx={{ mt: 2, mb: 2 }}
           fullWidth
         >
