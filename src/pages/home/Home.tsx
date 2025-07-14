@@ -459,63 +459,81 @@ const Home: React.FC = () => {
         </Box>
       </Box>
 
-      {/* Debug info no frontend - sempre visível */}
-      <Paper sx={{ mt: 3, p: 2, backgroundColor: '#f8f9fa', border: '1px solid #e9ecef' }}>
-        <Typography variant="h6" gutterBottom color="primary">
-          🔍 Debug da API - Chamados
+      {/* Debug info no frontend - SEMPRE VISÍVEL */}
+      <Box sx={{ 
+        mt: 3, 
+        p: 2, 
+        backgroundColor: '#fff3cd', 
+        border: '2px solid #ff6b6b',
+        borderRadius: 2,
+        position: 'relative',
+        zIndex: 2,
+        width: '100%',
+        maxWidth: '100%'
+      }}>
+        <Typography variant="h5" gutterBottom sx={{ color: '#d63384', fontWeight: 'bold', textAlign: 'center' }}>
+          🔍 DEBUG API - MOBILE
         </Typography>
         
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="body2" fontWeight="bold">
-            Plataforma: {Capacitor.isNativePlatform() ? 'Mobile Nativo' : 'Web'}
+        <Box sx={{ mb: 2, p: 1, backgroundColor: '#e7f3ff', borderRadius: 1 }}>
+          <Typography variant="h6" sx={{ color: '#0066cc', fontWeight: 'bold' }}>
+            📱 PLATAFORMA: {Capacitor.isNativePlatform() ? 'MOBILE NATIVO' : 'WEB'}
           </Typography>
-          <Typography variant="body2">
-            Última verificação: {debugInfo.lastCheck}
+          <Typography variant="body1" sx={{ fontSize: '14px' }}>
+            ⏰ Última verificação: {debugInfo.lastCheck || 'Nunca'}
           </Typography>
         </Box>
 
-        <Divider sx={{ my: 1 }} />
-
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="body2" fontWeight="bold">Cliente ID:</Typography>
+        <Box sx={{ mb: 2, p: 1, backgroundColor: debugInfo.clienteId ? '#d4edda' : '#f8d7da', borderRadius: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 'bold', color: debugInfo.clienteId ? '#155724' : '#721c24' }}>
+            🆔 CLIENTE ID:
+          </Typography>
           <Typography 
-            variant="body2" 
+            variant="h6" 
             sx={{ 
-              color: debugInfo.clienteId ? 'green' : 'red',
+              color: debugInfo.clienteId ? '#155724' : '#721c24',
               fontFamily: 'monospace',
               backgroundColor: '#fff',
               p: 1,
               borderRadius: 1,
-              border: '1px solid #ddd'
+              border: '2px solid',
+              borderColor: debugInfo.clienteId ? '#28a745' : '#dc3545',
+              fontSize: '16px',
+              fontWeight: 'bold'
             }}
           >
-            {debugInfo.clienteId || 'NÃO ENCONTRADO'}
+            {debugInfo.clienteId || '❌ NÃO ENCONTRADO'}
           </Typography>
         </Box>
 
-        <Box sx={{ mb: 2 }}>
-          <Typography variant="body2" fontWeight="bold">Configuração:</Typography>
-          <Typography variant="body2">
-            • Supabase URL: {debugInfo.supabaseUrl ? '✅ Configurado' : '❌ Não configurado'}
+        <Box sx={{ mb: 2, p: 1, backgroundColor: '#e2e3e5', borderRadius: 1 }}>
+          <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#383d41' }}>
+            ⚙️ CONFIGURAÇÃO:
           </Typography>
-          <Typography variant="body2">
-            • Service Key: {debugInfo.serviceKey ? '✅ Configurado' : '❌ Não configurado'}
+          <Typography variant="body1" sx={{ fontSize: '14px' }}>
+            📡 Supabase URL: {debugInfo.supabaseUrl ? '✅ OK' : '❌ ERRO'}
+          </Typography>
+          <Typography variant="body1" sx={{ fontSize: '14px' }}>
+            🔑 Service Key: {debugInfo.serviceKey ? '✅ OK' : '❌ ERRO'}
           </Typography>
         </Box>
 
         {debugInfo.apiUrl && (
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="body2" fontWeight="bold">URL da API:</Typography>
+          <Box sx={{ mb: 2, p: 1, backgroundColor: '#fff3cd', borderRadius: 1 }}>
+            <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#856404' }}>
+              🌐 URL DA API:
+            </Typography>
             <Typography 
-              variant="caption" 
+              variant="body2" 
               sx={{ 
                 fontFamily: 'monospace',
                 backgroundColor: '#fff',
                 p: 1,
                 borderRadius: 1,
-                border: '1px solid #ddd',
-                display: 'block',
-                wordBreak: 'break-all'
+                border: '1px solid #ffeaa7',
+                fontSize: '11px',
+                wordBreak: 'break-all',
+                lineHeight: 1.2
               }}
             >
               {debugInfo.apiUrl}
@@ -524,19 +542,19 @@ const Home: React.FC = () => {
         )}
 
         {debugInfo.apiError && (
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="body2" fontWeight="bold" color="error">
-              Erro da API:
+          <Box sx={{ mb: 2, p: 1, backgroundColor: '#f8d7da', borderRadius: 1 }}>
+            <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#721c24' }}>
+              ❌ ERRO DA API:
             </Typography>
             <Typography 
-              variant="body2" 
-              color="error"
+              variant="body1" 
               sx={{ 
-                fontFamily: 'monospace',
+                color: '#721c24',
                 backgroundColor: '#fff',
                 p: 1,
                 borderRadius: 1,
-                border: '1px solid #ddd'
+                border: '2px solid #dc3545',
+                fontSize: '14px'
               }}
             >
               {debugInfo.apiError}
@@ -544,22 +562,23 @@ const Home: React.FC = () => {
           </Box>
         )}
 
-        {debugInfo.apiResponse && (
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="body2" fontWeight="bold">
-              Resposta da API ({Array.isArray(debugInfo.apiResponse) ? debugInfo.apiResponse.length : 0} chamados):
+        {debugInfo.apiResponse !== null && (
+          <Box sx={{ mb: 2, p: 1, backgroundColor: '#d1ecf1', borderRadius: 1 }}>
+            <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#0c5460' }}>
+              📊 RESPOSTA ({Array.isArray(debugInfo.apiResponse) ? debugInfo.apiResponse.length : 0} chamados):
             </Typography>
             <Typography 
-              variant="caption" 
+              variant="body2" 
               sx={{ 
                 fontFamily: 'monospace',
                 backgroundColor: '#fff',
                 p: 1,
                 borderRadius: 1,
-                border: '1px solid #ddd',
-                display: 'block',
-                maxHeight: '200px',
-                overflow: 'auto'
+                border: '1px solid #bee5eb',
+                fontSize: '10px',
+                maxHeight: '150px',
+                overflow: 'auto',
+                lineHeight: 1.2
               }}
             >
               {JSON.stringify(debugInfo.apiResponse, null, 2)}
@@ -567,15 +586,23 @@ const Home: React.FC = () => {
           </Box>
         )}
 
-        <Button 
-          variant="outlined" 
-          size="small" 
-          onClick={() => window.location.reload()}
-          sx={{ mt: 1 }}
-        >
-          Recarregar Página
-        </Button>
-      </Paper>
+        <Box sx={{ textAlign: 'center', mt: 2 }}>
+          <Button 
+            variant="contained" 
+            color="primary"
+            size="large"
+            onClick={() => window.location.reload()}
+            sx={{ 
+              fontSize: '16px',
+              fontWeight: 'bold',
+              py: 1.5,
+              px: 4
+            }}
+          >
+            🔄 RECARREGAR
+          </Button>
+        </Box>
+      </Box>
     </Container>
   );
 };
